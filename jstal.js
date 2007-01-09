@@ -22,7 +22,7 @@ jsTalTemplate = function(args) {
 			'attrs':true,
 		};
 		
-	this.strip_space_re = new RegExp('[^ ]+');	// .match returns a string of text w/o whitespace
+	this.strip_space_re = /[^ ]+/;	// .match returns a string of text w/o whitespace
 }
 
 jsTalTemplate.prototype = {
@@ -81,16 +81,16 @@ jsTalTemplate.prototype = {
 		// repeat and defines
 		
 		var e = {};	// use a plain dict to store element information
-		var namespace_info = this.extract_namespace_info(element, parent_namespace_map);
-		e.namespace_info = namespace_info;
+		var node_info = this.extract_node_info(element, parent_namespace_map);
+		e.node_info = node_info;
 		
-		if(namespace_info.namespaceURI && 
-			parent_namespace_map[namespace_info.namespaceURI] === undefined &&
-			namespace_info.prefix) {
-			e.declare_namespaces = [[namespace_info.namespaceURI, namespace_info.prefix]];
+		if(node_info.namespaceURI && 
+			parent_namespace_map[node_info.namespaceURI] === undefined &&
+			node_info.prefix) {
+			e.declare_namespaces = [[node_info.namespaceURI, node_info.prefix]];
 			
 			// remember we're going to declare it
-			parent_namespace_map[namespace_info.namespaceURI] = namespace_info.prefix;
+			parent_namespace_map[node_info.namespaceURI] = node_info.prefix;
 		}
 
 		var element_attributes = {};	// element attributes to be generated
@@ -100,28 +100,29 @@ jsTalTemplate.prototype = {
 		var attributes = element.attributes;
 		for(var i=0, l=attributes.length; i < l; i++) {
 			var attribute = attributes[i];
-			var namespace_info = this.extract_namespace_info(attribute, parent_namespace_map);
-			if((namespace_info.namespaceURI || '').toLowerCase() == 'http://www.w3.org/2000/xmlns/')
+			var node_info = this.extract_node_info(attribute, parent_namespace_map);
+			if((node_info.namespaceURI || '').toLowerCase() == 'http://www.w3.org/2000/xmlns/')
 				continue; // ignore xmlns declaration
 				
-			namespace_info.nodeValue = attribute.nodeValue;
+			node_info.nodeValue = attribute.nodeValue;
 
-			if(namespace_info.namespaceURI != this.jstal_namespace) {
+			if(node_info.namespaceURI != this.jstal_namespace) {
 				// a regular attribute
-				if(namespace_info.namespaceURI && 
-					parent_namespace_map[namespace_info.namespaceURI] === undefined &&
-					namespace_info.prefix) {
-					e.declare_namespaces = [[namespace_info.namespaceURI, namespace_info.prefix]];
+				if(node_info.namespaceURI && 
+					parent_namespace_map[node_info.namespaceURI] === undefined &&
+					node_info.prefix) {
+					e.declare_namespaces = [[node_info.namespaceURI, node_info.prefix]];
 					
 					// remember we're going to declare it
-					parent_namespace_map[namespace_info.namespaceURI] = namespace_info.prefix;
+					parent_namespace_map[node_info.namespaceURI] = node_info.prefix;
 				}
 				
-				element_attributes[namespace_info.local_name] = namespace_info;
+				element_attributes[node_info.local_name] = node_info;
 			} else {
-				var local_name = namespace_info.local_name;
-				tal_attributes[local_name] = namespace_info;
+				var local_name = node_info.local_name;
+				tal_attributes[local_name] = node_info;
 				
+				this.compile_tal_attribute(node_info);
 				
 			}
 		}
@@ -175,7 +176,17 @@ jsTalTemplate.prototype = {
 		return e;
 	},
 	
-	"extract_namespace_info" : function(node) {
+	"compile_tal_attribute" : function(node_info) {
+		var nodeValue = node_info.nodeValue;
+		
+		switch(node_info.local_name)  {
+			case "content" :
+				node_info.expression = this.decode_expression(nodeValue);
+				break;
+		}
+	},
+	
+	"extract_node_info" : function(node) {
 		// extract localname, prefix and namespace
 		// declarations. 
 		// namespace_map is a mapping of namespaces already declared
@@ -191,6 +202,15 @@ jsTalTemplate.prototype = {
 		}
 	},
 	
+	"decode_expression" : function(expression_text) {
+		// given expression text, determine which 
+		// type of expression it is and return a function
+		// for that type
+		
+		// for now, only handle path expression w/o leading path:
+		return this.compile_path_expression(expression_text);
+	},
+	
 	"compile_path_expression" : function(expression_text) {
 		// generates a function object that evaluates context
 		// and returns a value
@@ -199,12 +219,15 @@ jsTalTemplate.prototype = {
 		
 		var terminals = expression_text.split('|');
 		var expressions = [];
+		var match = this.strip_space_re;
 		for(i=0, l=terminals.length; i < l; i++) {
-			var terminal = this.strip_space_re.match(terminals[i]);
-			if(!terminal) {
+			console.debug("testing i",i," = ", terminals[i]);
+			var terminal = terminals[i].match(match);
+			console.debug("terminal", terminal);
+			if(!terminal  || !terminal.length) {
 				throw new TypeError("missing path text when evaluating path expression:"+expression_text);
 			}
-			expressions.push(terminal);
+			expressions.push(terminal[0]);
 		}
 		var function_text = [];
 		
@@ -221,15 +244,16 @@ jsTalTemplate.prototype = {
 				function_text.push('var c = context;'); // establish current context
 				for(var is=0, ls=steps.length; is < ls; is++) {
 					var step = steps[is];
-					function_text.push('var c=c.'+step+';');				
+					function_text.push('c=c.'+step+';');				
 					function_text.push('if(!c) break;');
 				}
 				function_text.push('} while(false);');
 				function_text.push('if(c) return c;');
 			}
 		}
-		function_text.push('raise new Error("expression evaluation failed: ' + expression + '");');
-		function_text = " ".join(function_text);
+		function_text.push('throw new Error("expression evaluation failed: ' + expression + '");');
+		function_text = function_text.join("\n");
+		console.debug("compile ", expression_text, "to", function_text);
 		return new Function('context', function_text);
 	},
 	
