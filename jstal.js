@@ -34,32 +34,53 @@ jsTalTemplate.prototype = {
 		// passed in args, see TALES specification
 		
 		var context = {
-			'options':options
+			'options':options,
+			'repeat':{}
 		};
 		
 		var template = this.compiled_template;
 		var result_html = [];
 		this.html_expand_template(template, context, result_html);
-		
-		return '<b>default return</b>';
+		return result_html.join("");
 	},
 	
 	"html_expand_template" : function(template, context, result_html) {
 		// expand this template and children, append to result_html
+		if(3 == template.nodeType) {	// text node
+			result_html.push(template.nodeValue);
+			return;
+		}
 		var close_tag = null;
-		if(!template.always_omit_tag) {
-			// conditionally omit tag
-			var omit_tag = false;
-			if(template.sometimes_omit_tag) {
-				var omit_tag_expression = (template.tal_attributes['omit-tag'] || {}).expression;
-				if(omit_tag_expression) {
-					var omit_tag = omit_tag_expression(context);
-				}
+		var node_info = template.node_info;
+		// simple, content  only supported
+		var attrs = '';
+		
+		result_html.push('<'+node_info.local_name+attrs + '>');
+		close_tag = "</" +node_info.local_name + ">";
+		
+		var tal_attributes = template.tal_attributes;
+		var tal_define = tal_attributes['content'];
+		var process_child_nodes = true;
+		if(tal_define) {
+			// replace the content of this element
+			// with expression result
+			var content = tal_define.expression(context);
+			if(content !== JAVASCRIPT_TAL_DEFAULT) {
+				process_child_nodes = false;
+				if(content === JAVASCRIPT_TAL_NOTHING)
+					content = '';
+				result_html.push(content);
 			}
-			if(!omit_tag) {
-			
+		} 
+		if(process_child_nodes) {
+			var childNodes = template.childNodes;
+	
+			for(var i=0, l = childNodes.length; i < l; i++) {
+				this.html_expand_template(childNodes[i], context, result_html);
 			}
 		}
+		if(close_tag)
+			result_html.push(close_tag);
 	},
 	
 	"compile": function() {
@@ -154,13 +175,7 @@ jsTalTemplate.prototype = {
 		for(var node=element.firstChild; node; node=node.nextSibling) {
 			if (node.nodeType == 1) {	// element
 				var parent_namespace_map_copy = this.copy_object(parent_namespace_map);
-				childNodes.push(
-					{
-						"nodeType":1,
-						"compiled_template":this.compile_element(node, parent_namespace_map_copy)
-					}
-				);
-				
+				childNodes.push(this.compile_element(node, parent_namespace_map_copy));				
 			} else if(node.nodeType == 3) { // text node
 				childNodes.push(
 					{
