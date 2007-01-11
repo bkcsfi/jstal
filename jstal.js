@@ -59,12 +59,12 @@ jsTalTemplate.prototype = {
 		close_tag = "</" +node_info.local_name + ">";
 		
 		var tal_attributes = template.tal_attributes;
-		var tal_define = tal_attributes['content'];
+		var tal_content = tal_attributes['content'];
 		var process_child_nodes = true;
-		if(tal_define) {
+		if(tal_content) {
 			// replace the content of this element
 			// with expression result
-			var content = tal_define.expression(context);
+			var content = tal_content.expression(context);
 			if(content !== JAVASCRIPT_TAL_DEFAULT) {
 				process_child_nodes = false;
 				if(content === JAVASCRIPT_TAL_NOTHING)
