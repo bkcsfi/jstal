@@ -281,6 +281,10 @@ jsTalTemplate.prototype = {
 			// a string expression
 			expression_text = this.trim(expression_text.substr(7));
 			var expression = this.compile_string_expression(expression_text,error_hint);
+		} else if(0 == expression_text.indexOf('javascript:')) {
+			// a string expression
+			expression_text = this.trim(expression_text.substr(11));
+			var expression = this.compile_javascript_expression(expression_text,error_hint);
 		} else if(0 == expression_text.indexOf('path:')) {
 			// a string expression
 			expression_text = this.trim(expression_text.substr(5));
@@ -316,6 +320,13 @@ jsTalTemplate.prototype = {
 		console.debug("compile string", expression_text, "to", function_text);
 		return new Function('context', function_text);
 		
+	},
+
+	"compile_javascript_expression" : function(expression_text, error_hint) {
+		// generates a function object from the expression text
+
+		var function_text = [];
+		return new Function('context', expression_text);		
 	},
 	
 	"compile_path_expression" : function(expression_text, error_hint) {
