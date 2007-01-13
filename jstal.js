@@ -23,6 +23,7 @@ jsTalTemplate = function(args) {
 		};
 		
 	this.strip_space_re = /[^ ]+/;	// .match returns a string of text w/o whitespace
+	this.escape_content_match = /&|<|>/; // match if we need to escape content
 }
 
 jsTalTemplate.prototype = {
@@ -157,10 +158,17 @@ jsTalTemplate.prototype = {
 				var content = tal_content.expression(context);
 				if(typeof content == 'function')
 					content = content(context);
+					
 				if(content !== JAVASCRIPT_TAL_DEFAULT) {
 					process_child_nodes = false;
-					if(content === JAVASCRIPT_TAL_NOTHING)
+					if(content === JAVASCRIPT_TAL_NOTHING) {
 						content = '';
+					} else if(!tal_content.structure) {
+						// escape_content maybe?
+						if(this.escape_content_match.test(content)) {
+							content = this.escape_content(content);
+						}
+					}
 					result_html.push(content);
 				}
 			} 
@@ -196,6 +204,10 @@ jsTalTemplate.prototype = {
 		}
 		if(close_tag)
 			result_html.push(close_tag);
+	},
+	"escape_content" : function(str) {
+		// replace & with &amp; < with &lt; and > with &gt;
+		return  String(str).replace('&', '&amp;').replace('<', '&lt;').replace('>','&gt;');
 	},
 	
 	"compile": function() {
@@ -320,10 +332,10 @@ jsTalTemplate.prototype = {
 	"compile_tal_attribute" : function(node_info, parent_node_info) {
 		var nodeValue = this.trim(node_info.nodeValue);
 		var tagname = this.generate_tagname(parent_node_info);
+		var first_space = nodeValue.indexOf(' ');
 		switch(node_info.local_name)  {
 			case "repeat" :
 				// expect jtal:repeat="v expression"
-				var first_space = nodeValue.indexOf(' ');
 				if(first_space >= 0) {
 					var repeat_var = nodeValue.substring(0, first_space);
 					var expression = this.trim(nodeValue.substring(first_space+1));
@@ -344,6 +356,13 @@ jsTalTemplate.prototype = {
 				break;
 			case "content" :
 				var error_hint = '<'+tagname +" tal:content='"+nodeValue + "' />";
+				node_info.structure = false;
+				if(0 == nodeValue.indexOf('structure ')) {
+					var structure_flag = nodeValue.substring(0, first_space);
+					nodeValue = this.trim(nodeValue.substring(first_space+1));
+					node_info.structure = true;
+				} 
+				
 				var expression_info = this.decode_expression(nodeValue, error_hint);
 				node_info.expression = 	expression_info.expression;
 				node_info.error_hint = error_hint;
