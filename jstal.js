@@ -19,7 +19,6 @@ jsTalTemplate = function(args) {
 			'nothing':true,
 			'default':true,
 			'repeat':true,
-			'attrs':true,
 		};
 		
 	this.strip_space_re = /[^ ]+/;	// .match returns a string of text w/o whitespace
@@ -37,9 +36,19 @@ jsTalTemplate.prototype = {
 		var context = {
 			'options':options,
 			'repeat':{},
-			'locals':{},
+			'locals':{
+				'nothing':JAVASCRIPT_TAL_NOTHING,
+				'default':JAVASCRIPT_TAL_DEFAULT
+			},
 			'globals':{},
 		};
+		var CONTEXTS = {
+			'nothing':JAVASCRIPT_TAL_NOTHING,
+			'default':JAVASCRIPT_TAL_DEFAULT,
+			'options':context.options,
+			'repeat':{},			
+		}
+		context.CONTEXTS = CONTEXTS;
 		
 		var template = this.compiled_template;
 		var result_html = [];
@@ -54,13 +63,15 @@ jsTalTemplate.prototype = {
 			'globals':context.globals,
 			'repeat':this.copy_object(context.repeat),
 			'locals':this.copy_object(context.locals),
+			'CONTEXTS':context.CONTEXTS
 		};
+		new_context.CONTEXTS.repeat = new_context.repeat;
 		return new_context;
 	},
 	
 	"html_expand_template" : function(template, context, result_html, repeat_inside) {
 		// expand this template and children, append to result_html
-		var tal_attributes = template.tal_attributes;
+		var tal_statements = template.tal_statements;
 
 		if(!repeat_inside) {
 			if(template.clone_context) // needed for tal:define or tal:repeat
@@ -68,7 +79,7 @@ jsTalTemplate.prototype = {
 
 			// process tal_define here
 							
-			var tal_repeat = tal_attributes['repeat'];
+			var tal_repeat = tal_statements['repeat'];
 			if(tal_repeat) {
 				var repeat_var = tal_repeat.repeat_var;
 				var locals = context.locals;
@@ -138,19 +149,50 @@ jsTalTemplate.prototype = {
 			}
 		}
 		
-		var close_tag = null;
 		var node_info = template.node_info;
-		// simple, content  only supported
-		var attrs = '';
-
 		var tagname = node_info.tagname;
+		var close_tag = "</" +tagname + ">";
 		
-		result_html.push('<'+tagname+attrs + '>');
-		close_tag = "</" +tagname + ">";
+		// figure out which attributes get added to element
+		var attrs = template.static_attributes;
+		var tal_attributes = tal_statements['attributes'];
+		if(tal_attributes) {
+			var attributes = [];
+			var expressions = tal_attributes.expressions;
+			for(var i=0, l=expressions.length; i < l; i++) {
+				var expression = expressions[i];
+				
+				// do we try/except on attributes?
+				// not now, let em rip
+				var attribute_value = expression.expression(context);
+				if(typeof attribute_value == 'function')
+					attribute_value = attribute_value(context);
+					
+				if(attribute_value != JAVASCRIPT_TAL_NOTHING) {
+					if(attribute_value == JAVASCRIPT_TAL_DEFAULT) {
+						// default, is there one?
+						if(expression.default_value != undefined) {
+							attributes.push(expression.attribute_name + '="' + 
+												expression.default_value + '"');
+						}
+					} else {
+						// got a value, add it
+						attributes.push(expression.attribute_name + '="' + 
+											attribute_value + '"');
+					}
+				}
+			}
+			if(attributes.length) {
+				// add to attrs
+				attrs += " " + attributes.join(' ');
+			}
+		}
+		
+		result_html.push('<'+tagname+attrs+ '>');
 		var process_child_nodes = true;
 		
 		try {
-			var tal_content = tal_attributes['content'];
+			var tal_content = tal_statements['content'];
 			if(tal_content) {
 				// replace the content of this element
 				// with expression result
@@ -243,7 +285,7 @@ jsTalTemplate.prototype = {
 		}
 
 		var element_attributes = {};	// element attributes to be generated
-		var tal_attributes = {};	// tal attributes to be expanded
+		var tal_statements = {};	// tal attributes to be expanded
 
 		// iterate over element template attributes
 		var attributes = element.attributes;
@@ -266,32 +308,51 @@ jsTalTemplate.prototype = {
 					parent_namespace_map[node_info.namespaceURI] = node_info.prefix;
 				}
 				
-				element_attributes[node_info.local_name] = node_info;
+				element_attributes[node_info.tagname] = node_info;
 			} else {
 				var local_name = node_info.local_name;
-				tal_attributes[local_name] = node_info;
+				tal_statements[local_name] = node_info;
 				
-				this.compile_tal_attribute(node_info, e.node_info);
-				
+				if(local_name != 'attributes')
+					// cannot compile attributes until all
+					// attributes have been read from element
+					this.compile_tal_attribute(node_info, e.node_info);
 			}
 		}
+		// now, compile attributes if we have them
+		// side effect of compiling tal:attributes is that
+		// some attributes are removed from element_attributes
+		if(tal_statements['attributes'])
+			this.compile_tal_attribute(tal_statements['attributes'], e.node_info, 
+												element_attributes);
 		
-		e.element_attributes = element_attributes;
-		e.tal_attributes = tal_attributes;
+		// generate fully static attributes
+		var static_attributes = [];
+		for(var tagname in element_attributes) {
+			var attribute_node_info = element_attributes[tagname];
+			static_attributes.push(attribute_node_info.tagname + 
+										'="'+attribute_node_info.nodeValue + '"');
+		}
+		if(static_attributes.length) 
+			e.static_attributes = ' ' + static_attributes.join(' ');
+		else
+			e.static_attributes = '';
+
+		e.tal_statements = tal_statements;
 		e.sometimes_omit_tag = false;
 		
-		var tal_onerror = tal_attributes['on-error'];
+		var tal_onerror = tal_statements['on-error'];
 		if(tal_onerror !== undefined && tal_onerror.expression) {
 			e.onerror = on_error_expression = tal_onerror.expression;
 		} else
 			e.onerror = on_error_expression;
 			
-		if(tal_attributes['define'] || tal_attributes['repeat'])
+		if(tal_statements['define'] || tal_statements['repeat'])
 			e.clone_context = true;
 		
-		if(tal_attributes['omit-tag'] !== undefined) {
+		if(tal_statements['omit-tag'] !== undefined) {
 			e.sometimes_omit_tag = true;
-			if(!tal_attributes['omit-tag'].nodeValue) {
+			if(!tal_statements['omit-tag'].nodeValue) {
 				// empty string means we will always 
 				// omit the tag, so don't need to test during
 				// expansion
@@ -328,7 +389,7 @@ jsTalTemplate.prototype = {
 		return e;
 	},
 	
-	"compile_tal_attribute" : function(node_info, parent_node_info) {
+	"compile_tal_attribute" : function(node_info, parent_node_info, element_attributes) {
 		var nodeValue = this.trim(node_info.nodeValue);
 		var tagname = parent_node_info.tagname;
 		var first_space = nodeValue.indexOf(' ');
@@ -353,11 +414,35 @@ jsTalTemplate.prototype = {
 				node_info.repeat_var = repeat_var;
 				node_info.error_hint = error_hint;
 				break;
-			case "attibutes":
+			case "attributes":
 				// attributes can consist of multiple expressions,
 				// so break into expression list first
+				var gerror_hint = '<'+tagname +" tal:attributes='"+nodeValue + "' />";
 				var expressions = this.split_expressions(nodeValue);
-				
+				for(var i=0, l=expressions.length; i < l; i++) {
+					var expression = expressions[i];
+					var first_space = expression.indexOf(' ');
+					if(first_space < 2) {
+						throw new TypeError("attribute argument missing attribute name: " +gerror_hint);
+					}
+					var attribute_name = expression.substring(0, first_space);
+					var error_hint = "attribute '"+attribute_name + "' in :" +gerror_hint;
+					var expression = this.trim(expression.substring(first_space+1));
+					var expression_info = this.decode_expression(expression, 
+										error_hint);
+					
+					var default_value = element_attributes[attribute_name];
+					expressions[i] = {
+						'expression':expression_info.expression,
+						'attribute_name':attribute_name,
+						'default_value':default_value ? default_value.nodeValue : null,
+						'error_hint':error_hint
+					};
+					if(default_value) 	// remove from static elements
+						delete element_attributes[attribute_name];
+				}
+				node_info.expressions = expressions;
+				node_info.error_hint = gerror_hint;
 				break;
 			case "content" :
 				var error_hint = '<'+tagname +" tal:content='"+nodeValue + "' />";
@@ -383,7 +468,7 @@ jsTalTemplate.prototype = {
 	
 	"trim" : function(s) {
 		// trim leading and trailing whitespace
-		return s.replace(/^\\s+|\\s+$/g,'');
+		return s.replace(/^\s+|\s+$/g,'');
 	},
 	"split_expressions" : function(s) {
 		// return list of expressions
@@ -548,6 +633,10 @@ jsTalTemplate.prototype = {
 				if(steps[0] == 'options') {
 					// lookup in options, not locals or globals
 					function_text.push('var c = context.options;'); // establish current context
+					start_index = 1;	// skip this step
+				} else if (steps[0] == 'CONTEXTS') {
+					// lookup in CONTEXTS, not locals or globals
+					function_text.push('var c = context.CONTEXTS;'); // establish current context
 					start_index = 1;	// skip this step
 				} else if(steps[0] == 'repeat') {
 					// lookup in repeat, not locals or globals
