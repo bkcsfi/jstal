@@ -67,8 +67,8 @@ jsTalTemplate.prototype = {
 
 			// process tal_define here
 							
-			if(tal_attributes['repeat']) {
-				var tal_repeat = tal_attributes['repeat'];
+			var tal_repeat = tal_attributes['repeat'];
+			if(tal_repeat) {
 				var repeat_var = tal_repeat.repeat_var;
 				var locals = context.locals;
 				var repeat = context.repeat;
@@ -153,6 +153,7 @@ jsTalTemplate.prototype = {
 			if(tal_content) {
 				// replace the content of this element
 				// with expression result
+				var tal_object = tal_content;
 				var content = tal_content.expression(context);
 				if(typeof content == 'function')
 					content = content(context);
@@ -168,7 +169,13 @@ jsTalTemplate.prototype = {
 			// an error occured in content, do we have an on-error?
 			if(template.onerror) {
 				process_child_nodes = false;
-				var content = template.onerror(context, e, template);
+				var error_context = this.clone_context(context);
+				error_context['on-error'] = {
+					'exception':e,
+					'template':template,
+					'error_hint':tal_object ? tal_object.error_hint : null
+				}
+				var content = template.onerror(error_context);
 				if(JAVASCRIPT_TAL_DEFAULT !== content && 
 					JAVASCRIPT_TAL_NOTHING !== content) {
 					result_html.push(content);
@@ -336,14 +343,16 @@ jsTalTemplate.prototype = {
 				node_info.error_hint = error_hint;
 				break;
 			case "content" :
-				var expression_info = this.decode_expression(nodeValue,
-											'<'+tagname +" tal:content='"+nodeValue + "' />");
+				var error_hint = '<'+tagname +" tal:content='"+nodeValue + "' />";
+				var expression_info = this.decode_expression(nodeValue, error_hint);
 				node_info.expression = 	expression_info.expression;
+				node_info.error_hint = error_hint;
 				break;
 			case "on-error" :
-				var expression_info = this.decode_expression(nodeValue,
-											'<'+tagname +" tal:on-error='"+nodeValue + "' />");
+				var error_hint = '<'+tagname +" tal:on-error='"+nodeValue + "' />";
+				var expression_info = this.decode_expression(nodeValue, error_hint);
 				node_info.expression = 	expression_info.expression;
+				node_info.error_hint = error_hint;
 				break;
 		}
 	},
