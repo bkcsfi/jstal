@@ -32,6 +32,13 @@ jsTalTemplate.prototype = {
 		// return the expanded results as a string of html
 		// options is an object containing the
 		// passed in args, see TALES specification
+
+		var CONTEXTS = {
+			'nothing':JAVASCRIPT_TAL_NOTHING,
+			'default':JAVASCRIPT_TAL_DEFAULT,
+			'options':options,
+			'repeat':{},			
+		}
 		
 		var context = {
 			'options':options,
@@ -41,15 +48,8 @@ jsTalTemplate.prototype = {
 				'default':JAVASCRIPT_TAL_DEFAULT
 			},
 			'globals':{},
+			'CONTEXTS':CONTEXTS
 		};
-		var CONTEXTS = {
-			'nothing':JAVASCRIPT_TAL_NOTHING,
-			'default':JAVASCRIPT_TAL_DEFAULT,
-			'options':context.options,
-			'repeat':{},			
-		}
-		context.CONTEXTS = CONTEXTS;
-		
 		var template = this.compiled_template;
 		var result_html = [];
 		this.html_expand_template(template, context, result_html);
@@ -164,10 +164,26 @@ jsTalTemplate.prototype = {
 				
 				// do we try/except on attributes?
 				// not now, let em rip
-				var attribute_value = expression.expression(context);
-				if(typeof attribute_value == 'function')
-					attribute_value = attribute_value(context);
-					
+				try {
+					var attribute_value = expression.expression(context);
+					if(typeof attribute_value == 'function')
+						attribute_value = attribute_value(context);
+				} 
+				catch(e) {
+					// an error occured in content, do we have an on-error?
+					if(template.onerror) {
+						process_child_nodes = false;
+						var content = this.dispatch_error(context, template, e, 
+											expression.error_hint);
+						if(JAVASCRIPT_TAL_DEFAULT !== content && 
+							JAVASCRIPT_TAL_NOTHING !== content) {
+							result_html.push('<'+tagname+attrs+ '>');
+							result_html.push(content);
+							result_html.push(close_tag);
+						}
+						return;
+					} else throw e;
+				}
 				if(attribute_value != JAVASCRIPT_TAL_NOTHING) {
 					if(attribute_value == JAVASCRIPT_TAL_DEFAULT) {
 						// default, is there one?
@@ -219,13 +235,7 @@ jsTalTemplate.prototype = {
 			// an error occured in content, do we have an on-error?
 			if(template.onerror) {
 				process_child_nodes = false;
-				var error_context = this.clone_context(context);
-				error_context['on-error'] = {
-					'exception':e,
-					'template':template,
-					'error_hint':tal_object ? tal_object.error_hint : null
-				}
-				var content = template.onerror(error_context);
+				var content = this.dispatch_error(context, template, e, template.error_hint);
 				if(JAVASCRIPT_TAL_DEFAULT !== content && 
 					JAVASCRIPT_TAL_NOTHING !== content) {
 					result_html.push(content);
@@ -674,5 +684,27 @@ jsTalTemplate.prototype = {
 			o[s] = obj[s];
 		}
 		return o;
-	}
+	},
+
+	"dispatch_error" : function(context, template, e, extra_error_info) {
+		if(template.onerror) {
+			var error_context = this.clone_context(context);
+			var error = {
+				'type':'exception',
+				'value':e,
+				'template':template,
+				'error_hint':extra_error_info
+			}
+			
+			// format a nice traceback message
+			var exception_message = e.message | e.description | 'unknown';
+			var exception_name = e.name | 'unknownType';
+			var traceback = "Exception:"+exception_name + " '"+exception_message+"'";
+			if(extra_error_info)
+				traceback += ' / '+extra_error_info;
+			error.traceback = traceback;
+			error_context.locals.error = error;
+			return  this.escape_content(template.onerror(error_context));
+		} else throw e;
+	}	
 }
