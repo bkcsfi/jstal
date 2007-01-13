@@ -64,7 +64,9 @@ jsTalTemplate.prototype = {
 		if(!repeat_inside) {
 			if(template.clone_context) // needed for tal:define or tal:repeat
 				context = this.clone_context(context);
-				
+
+			// process tal_define here
+							
 			if(tal_attributes['repeat']) {
 				var tal_repeat = tal_attributes['repeat'];
 				var repeat_var = tal_repeat.repeat_var;
@@ -134,12 +136,13 @@ jsTalTemplate.prototype = {
 				return;
 			}
 		}
+		
 		var close_tag = null;
 		var node_info = template.node_info;
 		// simple, content  only supported
 		var attrs = '';
 
-		var tagname = this.generate_tagname(node_info);
+		var tagname = template.tagname;
 		
 		result_html.push('<'+tagname+attrs + '>');
 		close_tag = "</" +tagname + ">";
@@ -151,6 +154,8 @@ jsTalTemplate.prototype = {
 				// replace the content of this element
 				// with expression result
 				var content = tal_content.expression(context);
+				if(typeof content == 'function')
+					content = content(context);
 				if(content !== JAVASCRIPT_TAL_DEFAULT) {
 					process_child_nodes = false;
 					if(content === JAVASCRIPT_TAL_NOTHING)
@@ -208,6 +213,7 @@ jsTalTemplate.prototype = {
 		e.clone_context = false;	// true if we have to copy context when expanding template
 		var node_info = this.extract_node_info(element, parent_namespace_map);
 		e.node_info = node_info;
+		e.tagname = this.generate_tagname(node_info);
 		
 		if(node_info.namespaceURI && 
 			parent_namespace_map[node_info.namespaceURI] === undefined &&
@@ -355,7 +361,7 @@ jsTalTemplate.prototype = {
 			return node_info.local_name;
 	},
 	
-	"extract_node_info" : function(node) {
+	"extract_node_info" : function(node, parent_namespace_map) {
 		// extract localname, prefix and namespace
 		// declarations. 
 		// namespace_map is a mapping of namespaces already declared
@@ -364,6 +370,8 @@ jsTalTemplate.prototype = {
 		var local_name = node.localName;
 		var prefix = node.prefix || null;
 		var namespaceURI = node.namespaceURI;
+		if(parent_namespace_map[namespaceURI])
+			prefix = parent_namespace_map[namespaceURI]; // use parent's prefix
 		return {
 			"local_name":local_name,
 			"prefix":prefix,
