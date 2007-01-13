@@ -46,11 +46,93 @@ jsTalTemplate.prototype = {
 		return result_html.join("");
 	},
 	
-	"html_expand_template" : function(template, context, result_html) {
+	"clone_context" : function(context) {
+		// return a copy of the current context
+		var new_context = {
+			'options':context.options,
+			'globals':context.globals,
+			'repeat':this.copy_object(context.repeat),
+			'locals':this.copy_object(context.locals),
+		};
+		return new_context;
+	},
+	
+	"html_expand_template" : function(template, context, result_html, repeat_inside) {
 		// expand this template and children, append to result_html
-		if(3 == template.nodeType) {	// text node
-			result_html.push(template.nodeValue);
-			return;
+		var tal_attributes = template.tal_attributes;
+
+		if(!repeat_inside) {
+			if(template.clone_context) // needed for tal:define or tal:repeat
+				context = this.clone_context(context);
+				
+			if(tal_attributes['repeat']) {
+				var tal_repeat = tal_attributes['repeat'];
+				var repeat_var = tal_repeat.repeat_var;
+				var locals = context.locals;
+				var repeat = context.repeat;
+				
+				var repeat_source = tal_repeat.expression(context);
+				if(typeof repeat_source == 'function')
+					repeat_source = repeat_source(context);
+					
+				// what type of iterable is it?
+				if(repeat_source instanceof Array) {
+					for(var i=0, l=repeat_source.length; i < l; i++) {
+						locals[repeat_var] = repeat_source[i];
+						repeat[repeat_var] = {
+							'index':i,
+							'number':i+1,
+							'even':Boolean(!(i & 1)),
+							'odd':Boolean((i & 1)),
+							'start':Boolean((i == 0)),
+							'end':Boolean((i+1 == l)),
+							'length':l
+						};
+						
+						this.html_expand_template(template, context, result_html, true);
+					}
+				} else if(typeof repeat_source == 'object') {
+					// could be an iterator
+					if(typeof repeat_source.next != 'function')  {
+						if(typeof repeat_source.iter == 'function') {
+							repeat_source = repeat_source.iter();
+						} else if (typeof repeat_source.__iterable__ == 'function') {
+							repeat_source = repeat_source.__iterable__();						
+						} else {
+							throw new TypeError("repeat source is not an array or iterable: "+tal_repeat.error_hint);
+						}
+					}
+					// use next() function
+					try {
+						var i=0;
+						do {
+							locals[repeat_var] = repeat_source.next();
+							repeat[repeat_var] = {
+								'index':i,
+								'number':i+1,
+								'even':Boolean(!(i & 1)),
+								'odd':Boolean((i & 1)),
+								'start':Boolean((i == 0)),
+								'end':null, // we never know
+								'length':null // don't know this either
+							};
+							
+							this.html_expand_template(template, context, result_html, true);
+							i += 1;
+						} while(true);
+					
+					} catch(e) {
+						if(typeof StopIteration != 'undefined') 
+							if(e != StopIteration)	// mochikit specific?
+								throw e;
+								
+						// get here, StopIteration isn't known
+						// we got an exception, throw it or not?
+						// I guess eat it for now
+					}
+				}
+				return;
+			}
 		}
 		var close_tag = null;
 		var node_info = template.node_info;
@@ -64,7 +146,6 @@ jsTalTemplate.prototype = {
 		var process_child_nodes = true;
 		
 		try {
-			var tal_attributes = template.tal_attributes;
 			var tal_content = tal_attributes['content'];
 			if(tal_content) {
 				// replace the content of this element
@@ -83,7 +164,8 @@ jsTalTemplate.prototype = {
 			if(template.onerror) {
 				process_child_nodes = false;
 				var content = template.onerror(context, e, template);
-				if(content !== JAVASCRIPT_TAL_DEFAULT && content !== JAVASCRIPT_TAL_NOTHING) {
+				if(JAVASCRIPT_TAL_DEFAULT !== content && 
+					JAVASCRIPT_TAL_NOTHING !== content) {
 					result_html.push(content);
 				}
 			} else throw e;
@@ -92,7 +174,12 @@ jsTalTemplate.prototype = {
 			var childNodes = template.childNodes;
 	
 			for(var i=0, l = childNodes.length; i < l; i++) {
-				this.html_expand_template(childNodes[i], context, result_html);
+				var child_template = childNodes[i];
+				if(3 == child_template.nodeType) {	// text node
+					result_html.push(child_template.nodeValue);
+				} else {
+					this.html_expand_template(child_template, context, result_html);
+				}
 			}
 		}
 		if(close_tag)
@@ -118,6 +205,7 @@ jsTalTemplate.prototype = {
 		// repeat and defines
 		
 		var e = {};	// use a plain dict to store element information
+		e.clone_context = false;	// true if we have to copy context when expanding template
 		var node_info = this.extract_node_info(element, parent_namespace_map);
 		e.node_info = node_info;
 		
@@ -174,6 +262,9 @@ jsTalTemplate.prototype = {
 		} else
 			e.onerror = on_error_expression;
 			
+		if(tal_attributes['define'] || tal_attributes['repeat'])
+			e.clone_context = true;
+		
 		if(tal_attributes['omit-tag'] !== undefined) {
 			e.sometimes_omit_tag = true;
 			if(!tal_attributes['omit-tag'].nodeValue) {
@@ -214,16 +305,39 @@ jsTalTemplate.prototype = {
 	},
 	
 	"compile_tal_attribute" : function(node_info, parent_node_info) {
-		var nodeValue = node_info.nodeValue;
+		var nodeValue = this.trim(node_info.nodeValue);
 		var tagname = this.generate_tagname(parent_node_info);
 		switch(node_info.local_name)  {
+			case "repeat" :
+				// expect jtal:repeat="v expression"
+				var first_space = nodeValue.indexOf(' ');
+				if(first_space >= 0) {
+					var repeat_var = nodeValue.substring(0, first_space);
+					var expression = this.trim(nodeValue.substring(first_space+1));
+				} 
+				if(!repeat_var || !expression) {
+					throw new TypeError("repeat argument malformed: "+nodeValue);
+				}
+				
+				var error_hint = '<'+tagname +" tal:content='"+nodeValue + "' />";
+				var expression_info = this.decode_expression(expression, error_hint);
+				if(expression_info.type == 'string' ||
+ 				   expression_info.type == 'boolean') 
+ 				   throw new TypeError("repeat argument expression cannot be string or boolean type: "+nodeValue);
+ 				   
+				node_info.expression = 	expression_info.expression;
+				node_info.repeat_var = repeat_var;
+				node_info.error_hint = error_hint;
+				break;
 			case "content" :
-				node_info.expression = this.decode_expression(nodeValue,
+				var expression_info = this.decode_expression(nodeValue,
 											'<'+tagname +" tal:content='"+nodeValue + "' />");
+				node_info.expression = 	expression_info.expression;
 				break;
 			case "on-error" :
-				node_info.expression = this.decode_expression(nodeValue,
+				var expression_info = this.decode_expression(nodeValue,
 											'<'+tagname +" tal:on-error='"+nodeValue + "' />");
+				node_info.expression = 	expression_info.expression;
 				break;
 		}
 	},
@@ -277,21 +391,26 @@ jsTalTemplate.prototype = {
 			negate_expression_results = true;
 		}
 		
+		var expression_type = null;
 		if(0 == expression_text.indexOf('string:')) {
 			// a string expression
 			expression_text = this.trim(expression_text.substr(7));
 			var expression = this.compile_string_expression(expression_text,error_hint);
+			expression_type = 'string';
 		} else if(0 == expression_text.indexOf('javascript:')) {
 			// a string expression
 			expression_text = this.trim(expression_text.substr(11));
 			var expression = this.compile_javascript_expression(expression_text,error_hint);
+			expression_type = 'javascript';
 		} else if(0 == expression_text.indexOf('path:')) {
 			// a string expression
 			expression_text = this.trim(expression_text.substr(5));
 			var expression = this.compile_string_expression(expression_text,error_hint);
+			expression_type = 'path';
 		} else {
 			// default to path
 			var expression = this.compile_path_expression(expression_text, error_hint);
+			expression_type = 'path';
 		}
 		if(negate_expression_results) {
 			var negate = function() {
@@ -304,9 +423,12 @@ jsTalTemplate.prototype = {
 				else
 					return true;
 			}
-			return negate;
-		} else
-			return expression;
+			expression_type = 'boolean';
+			expession = negate;
+		} 
+		return {'expression':expression,
+			    'type':expression_type
+			    };
 	},
 
 	"compile_string_expression" : function(expression_text, error_hint) {
@@ -317,7 +439,6 @@ jsTalTemplate.prototype = {
 		function_text.push('return "'+expression_text+'";');
 
 		function_text = function_text.join("\n");
-		console.debug("compile string", expression_text, "to", function_text);
 		return new Function('context', function_text);
 		
 	},
@@ -339,9 +460,7 @@ jsTalTemplate.prototype = {
 		var expressions = [];
 		var match = this.strip_space_re;
 		for(i=0, l=terminals.length; i < l; i++) {
-			console.debug("testing i",i," = ", terminals[i]);
 			var terminal = terminals[i].match(match);
-			console.debug("terminal", terminal);
 			if(!terminal  || !terminal.length) {
 				throw new TypeError("missing path text when evaluating path expression:"+expression_text);
 			}
@@ -401,7 +520,6 @@ jsTalTemplate.prototype = {
 			error_hint = expression;
 		function_text.push('throw new Error("expression evaluation failed: ' + error_hint + '");');
 		function_text = function_text.join("\n");
-		console.debug("compile ", expression_text, "to", function_text);
 		return new Function('context', function_text);
 	},
 	
