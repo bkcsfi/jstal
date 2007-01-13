@@ -143,7 +143,7 @@ jsTalTemplate.prototype = {
 		// simple, content  only supported
 		var attrs = '';
 
-		var tagname = template.tagname;
+		var tagname = node_info.tagname;
 		
 		result_html.push('<'+tagname+attrs + '>');
 		close_tag = "</" +tagname + ">";
@@ -232,7 +232,6 @@ jsTalTemplate.prototype = {
 		e.clone_context = false;	// true if we have to copy context when expanding template
 		var node_info = this.extract_node_info(element, parent_namespace_map);
 		e.node_info = node_info;
-		e.tagname = this.generate_tagname(node_info);
 		
 		if(node_info.namespaceURI && 
 			parent_namespace_map[node_info.namespaceURI] === undefined &&
@@ -257,7 +256,7 @@ jsTalTemplate.prototype = {
 			node_info.nodeValue = attribute.nodeValue;
 
 			if(node_info.namespaceURI != this.jstal_namespace) {
-				// a regular attribute
+				// if a regular attribute and needs namespace decl, add it to map
 				if(node_info.namespaceURI && 
 					parent_namespace_map[node_info.namespaceURI] === undefined &&
 					node_info.prefix) {
@@ -331,7 +330,7 @@ jsTalTemplate.prototype = {
 	
 	"compile_tal_attribute" : function(node_info, parent_node_info) {
 		var nodeValue = this.trim(node_info.nodeValue);
-		var tagname = this.generate_tagname(parent_node_info);
+		var tagname = parent_node_info.tagname;
 		var first_space = nodeValue.indexOf(' ');
 		switch(node_info.local_name)  {
 			case "repeat" :
@@ -353,6 +352,12 @@ jsTalTemplate.prototype = {
 				node_info.expression = 	expression_info.expression;
 				node_info.repeat_var = repeat_var;
 				node_info.error_hint = error_hint;
+				break;
+			case "attibutes":
+				// attributes can consist of multiple expressions,
+				// so break into expression list first
+				var expressions = this.split_expressions(nodeValue);
+				
 				break;
 			case "content" :
 				var error_hint = '<'+tagname +" tal:content='"+nodeValue + "' />";
@@ -380,13 +385,20 @@ jsTalTemplate.prototype = {
 		// trim leading and trailing whitespace
 		return s.replace(/^\\s+|\\s+$/g,'');
 	},
-	
-	"generate_tagname" : function(node_info) {
-		// return tagname string, possible with xmlns
-		if(node_info.prefix)
-			return node_info.prefix + ':' + node_info.local_name;
-		else
-			return node_info.local_name;
+	"split_expressions" : function(s) {
+		// return list of expressions
+		// breaking on single semi-colon, but not breaking
+		// on double semi-colon (replace those with single-colon
+		// trims all expressions
+		var double_colon = /;;/mg;
+		var temp_marker = String.fromCharCode(1);
+		s = s.replace(double_colon, temp_marker);
+		var expressions = s.split(';');
+		for(var i=0, l=expressions.length; i < l; i++) {
+			var expression = expressions[i].replace(temp_marker, ';')
+			expressions[i] = this.trim(expression);
+		}
+		return expressions;
 	},
 	
 	"extract_node_info" : function(node, parent_namespace_map) {
@@ -400,10 +412,17 @@ jsTalTemplate.prototype = {
 		var namespaceURI = node.namespaceURI;
 		if(parent_namespace_map[namespaceURI])
 			prefix = parent_namespace_map[namespaceURI]; // use parent's prefix
-		return {
+			
+		if(prefix)
+			var tagname = prefix + ':' + local_name;
+		else
+			var tagname = local_name;
+			
+		return  {
 			"local_name":local_name,
 			"prefix":prefix,
-			"namespaceURI":namespaceURI
+			"namespaceURI":namespaceURI,
+			"tagname":tagname
 		}
 	},
 	
