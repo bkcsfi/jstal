@@ -18,7 +18,7 @@ jsTalTemplate = function(args) {
 			'options':true,
 			'nothing':true,
 			'default':true,
-			'repeat':true,
+			'repeat':true
 		};
 		
 	this.strip_space_re = /[^ ]+/;	// .match returns a string of text w/o whitespace
@@ -37,7 +37,7 @@ jsTalTemplate.prototype = {
 			'nothing':JAVASCRIPT_TAL_NOTHING,
 			'default':JAVASCRIPT_TAL_DEFAULT,
 			'options':options,
-			'repeat':{},			
+			'repeat':{}
 		}
 		
 		var context = {
@@ -84,7 +84,7 @@ jsTalTemplate.prototype = {
 				var repeat_var = tal_repeat.repeat_var;
 				var locals = context.locals;
 				var repeat = context.repeat;
-				
+
 				var repeat_source = tal_repeat.expression(context);
 				if(typeof repeat_source == 'function')
 					repeat_source = repeat_source(context);
@@ -301,11 +301,16 @@ jsTalTemplate.prototype = {
 		var attributes = element.attributes;
 		for(var i=0, l=attributes.length; i < l; i++) {
 			var attribute = attributes[i];
+			var nodeValue = attribute.nodeValue;
+			if(!nodeValue || typeof nodeValue != 'string') {
+				// IE returns all attributes, like onmouseup, etc
+				continue;
+			}
 			var node_info = this.extract_node_info(attribute, parent_namespace_map);
 			if((node_info.namespaceURI || '').toLowerCase() == 'http://www.w3.org/2000/xmlns/')
 				continue; // ignore xmlns declaration
 				
-			node_info.nodeValue = attribute.nodeValue;
+			node_info.nodeValue = nodeValue;
 
 			if(node_info.namespaceURI != this.jstal_namespace) {
 				// if a regular attribute and needs namespace decl, add it to map
@@ -403,6 +408,7 @@ jsTalTemplate.prototype = {
 		var nodeValue = this.trim(node_info.nodeValue);
 		var tagname = parent_node_info.tagname;
 		var first_space = nodeValue.indexOf(' ');
+
 		switch(node_info.local_name)  {
 			case "repeat" :
 				// expect jtal:repeat="v expression"
@@ -501,10 +507,26 @@ jsTalTemplate.prototype = {
 		// declarations. 
 		// namespace_map is a mapping of namespaces already declared
 		// by a parent node
-	
-		var local_name = node.localName;
-		var prefix = node.prefix || null;
 		var namespaceURI = node.namespaceURI;
+	
+		if(!node.localName) {
+			// could be stupid IE
+			var local_name =  node.nodeName;
+			var colon = local_name.indexOf(':');
+			if(-1 != colon) {
+				var prefix = local_name.substring(0, colon);
+				local_name = local_name.substring(colon+1);
+				if(!namespaceURI && prefix == 'jtal') {
+					// temporary workaround for IE not supporting
+					// namespaceURI
+					namespaceURI = JAVASCRIPT_TAL_NAMESPACE;
+				}
+			} else
+				var prefix = null;
+		} else {
+			var local_name = node.localName;
+			var prefix = node.prefix || null;
+		}
 		if(parent_namespace_map[namespaceURI])
 			prefix = parent_namespace_map[namespaceURI]; // use parent's prefix
 			
