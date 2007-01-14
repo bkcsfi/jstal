@@ -12,7 +12,19 @@ jsTalTemplate = function(args) {
 	this.template_element = args.template_element;
 	if(!this.template_element) 
 	    throw new TypeError("dom_element must be defined");
-	    
+	
+	// prefix_to_namespace_map is used by IE to map
+	// a prefix back to a namespaceURI because
+	// IE does not support namespaceURI on nodes.
+	if(args.prefix_to_namespace_map)
+		this.prefix_to_namespace_map = args.prefix_to_namespace_map;
+	else
+		this.prefix_to_namespace_map = {
+			'jtal':JAVASCRIPT_TAL_NAMESPACE,
+			'jstal':JAVASCRIPT_TAL_NAMESPACE,
+			'jal':JAVASCRIPT_TAL_NAMESPACE
+		};
+	
 	this.jstal_namespace = JAVASCRIPT_TAL_NAMESPACE;
 	this.reserved_variable_names = { // templates should not define these
 			'options':true,
@@ -178,7 +190,7 @@ jsTalTemplate.prototype = {
 						if(JAVASCRIPT_TAL_DEFAULT !== content && 
 							JAVASCRIPT_TAL_NOTHING !== content) {
 							result_html.push('<'+tagname+attrs+ '>');
-							result_html.push(content);
+							result_html.push(this.escape_content(content));
 							result_html.push(close_tag);
 						}
 						return;
@@ -238,7 +250,7 @@ jsTalTemplate.prototype = {
 				var content = this.dispatch_error(context, template, e, template.error_hint);
 				if(JAVASCRIPT_TAL_DEFAULT !== content && 
 					JAVASCRIPT_TAL_NOTHING !== content) {
-					result_html.push(content);
+					result_html.push(this.escape_content(content));
 				}
 			} else throw e;
 		}
@@ -264,10 +276,17 @@ jsTalTemplate.prototype = {
 	
 	"compile": function() {
 		// compile the source dom object
-		this.compiled_template = this.compile_element(this.template_element, {});
+		var traceback = [];
+		this.compiled_template = this.compile_element(this.template_element, 
+									{},  // parent_namespace_map
+									null,	// on_error_expression
+									traceback
+									);
 	},
 
-	"compile_element" : function(element, parent_namespace_map, on_error_expression) {
+	"compile_element" : function(element, parent_namespace_map, 
+											on_error_expression,
+											traceback) {
 		// compile this element and it's children into
 		// a template and return it
 		
@@ -284,6 +303,7 @@ jsTalTemplate.prototype = {
 		e.clone_context = false;	// true if we have to copy context when expanding template
 		var node_info = this.extract_node_info(element, parent_namespace_map);
 		e.node_info = node_info;
+		e.traceback = traceback;	// remember traceback stack
 		
 		if(node_info.namespaceURI && 
 			parent_namespace_map[node_info.namespaceURI] === undefined &&
@@ -384,11 +404,17 @@ jsTalTemplate.prototype = {
 			}
 		}
 		// expand children
+		console.debug('traceback ', traceback);
+		traceback = traceback.slice(0)
+		traceback.push(e.node_info.tagname + e.static_attributes);
 		var childNodes = [];
 		for(var node=element.firstChild; node; node=node.nextSibling) {
 			if (node.nodeType == 1) {	// element
 				var parent_namespace_map_copy = this.copy_object(parent_namespace_map);
-				childNodes.push(this.compile_element(node, parent_namespace_map_copy, on_error_expression));
+				childNodes.push(this.compile_element(node, 
+														parent_namespace_map_copy, 
+														on_error_expression,
+														traceback));
 			} else if(node.nodeType == 3) { // text node
 				childNodes.push(
 					{
@@ -516,10 +542,10 @@ jsTalTemplate.prototype = {
 			if(-1 != colon) {
 				var prefix = local_name.substring(0, colon);
 				local_name = local_name.substring(colon+1);
-				if(!namespaceURI && prefix == 'jtal') {
+				if(!namespaceURI) {
 					// temporary workaround for IE not supporting
 					// namespaceURI
-					namespaceURI = JAVASCRIPT_TAL_NAMESPACE;
+					namespaceURI = this.prefix_to_namespace_map[prefix];
 				}
 			} else
 				var prefix = null;
@@ -721,9 +747,17 @@ jsTalTemplate.prototype = {
 			// format a nice traceback message
 			var exception_message = e.message | e.description | 'unknown';
 			var exception_name = e.name | 'unknownType';
-			var traceback = "Exception:"+exception_name + " '"+exception_message+"'";
+			var traceback = "Exception Type:"+exception_name + "\nException Message: "+exception_message+"\n";
 			if(extra_error_info)
-				traceback += ' / '+extra_error_info;
+				traceback += extra_error_info;
+			if(template.traceback) {
+				traceback += "Traceback:\n"
+				for(var i=0, l=template.traceback.length; i < l; i++) {
+					var tb = template.traceback[i];
+					var indent = "                     ".substring(0, i*4);
+					traceback += indent + "<"+tb + " >\n";
+				}
+			}
 			error.traceback = traceback;
 			error_context.locals.error = error;
 			return  this.escape_content(template.onerror(error_context));
