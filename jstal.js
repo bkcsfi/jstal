@@ -189,9 +189,11 @@ jsTalTemplate.prototype = {
 											expression.error_hint);
 						if(JAVASCRIPT_TAL_DEFAULT !== content && 
 							JAVASCRIPT_TAL_NOTHING !== content) {
-							result_html.push('<'+tagname+attrs+ '>');
-							result_html.push(this.escape_content(content));
-							result_html.push(close_tag);
+							result_html.push('<div>');
+							if(!template.onerror.structure)
+								content = this.escape_content(content);
+							result_html.push(content);
+							result_html.push('</div>');
 						}
 						return;
 					} else throw e;
@@ -250,7 +252,9 @@ jsTalTemplate.prototype = {
 				var content = this.dispatch_error(context, template, e, template.error_hint);
 				if(JAVASCRIPT_TAL_DEFAULT !== content && 
 					JAVASCRIPT_TAL_NOTHING !== content) {
-					result_html.push(this.escape_content(content));
+					if(!template.onerror.structure)
+						content = this.escape_content(content);
+					result_html.push(content);
 				}
 			} else throw e;
 		}
@@ -279,13 +283,13 @@ jsTalTemplate.prototype = {
 		var traceback = [];
 		this.compiled_template = this.compile_element(this.template_element, 
 									{},  // parent_namespace_map
-									null,	// on_error_expression
+									null,	// on_error_info
 									traceback
 									);
 	},
 
 	"compile_element" : function(element, parent_namespace_map, 
-											on_error_expression,
+											on_error_info,
 											traceback) {
 		// compile this element and it's children into
 		// a template and return it
@@ -377,10 +381,10 @@ jsTalTemplate.prototype = {
 		e.sometimes_omit_tag = false;
 		
 		var tal_onerror = tal_statements['on-error'];
-		if(tal_onerror !== undefined && tal_onerror.expression) {
-			e.onerror = on_error_expression = tal_onerror.expression;
+		if(tal_onerror) {
+			e.onerror = on_error_info = tal_onerror;
 		} else
-			e.onerror = on_error_expression;
+			e.onerror = on_error_info;
 			
 		if(tal_statements['define'] || tal_statements['repeat'])
 			e.clone_context = true;
@@ -413,7 +417,7 @@ jsTalTemplate.prototype = {
 				var parent_namespace_map_copy = this.copy_object(parent_namespace_map);
 				childNodes.push(this.compile_element(node, 
 														parent_namespace_map_copy, 
-														on_error_expression,
+														on_error_info,
 														traceback));
 			} else if(node.nodeType == 3) { // text node
 				childNodes.push(
@@ -490,7 +494,6 @@ jsTalTemplate.prototype = {
 				var error_hint = '<'+tagname +" tal:content='"+nodeValue + "' />";
 				node_info.structure = false;
 				if(0 == nodeValue.indexOf('structure ')) {
-					var structure_flag = nodeValue.substring(0, first_space);
 					nodeValue = this.trim(nodeValue.substring(first_space+1));
 					node_info.structure = true;
 				} 
@@ -501,6 +504,11 @@ jsTalTemplate.prototype = {
 				break;
 			case "on-error" :
 				var error_hint = '<'+tagname +" tal:on-error='"+nodeValue + "' />";
+				node_info.structure = false;
+				if(0 == nodeValue.indexOf('structure ')) {
+					nodeValue = this.trim(nodeValue.substring(first_space+1));
+					node_info.structure = true;
+				} 
 				var expression_info = this.decode_expression(nodeValue, error_hint);
 				node_info.expression = 	expression_info.expression;
 				node_info.error_hint = error_hint;
@@ -745,22 +753,33 @@ jsTalTemplate.prototype = {
 			}
 			
 			// format a nice traceback message
-			var exception_message = e.message | e.description | 'unknown';
-			var exception_name = e.name | 'unknownType';
-			var traceback = "Exception Type:"+exception_name + "\nException Message: "+exception_message+"\n";
-			if(extra_error_info)
-				traceback += extra_error_info;
+			var exception_message = e.message || e.description || 'unknown';
+			var exception_name = e.name || 'unknownType';
+			var traceback = template.traceback;
+			
+			var html_message = ['<div>'];
+			html_message.push('<div><b>Exception Type :</b>'+exception_name+'</div>');
+			html_message.push('<div><b>Exception Message :</b>'+this.escape_content(exception_message)+'</div>');
+			
 			if(template.traceback) {
-				traceback += "Traceback:\n"
+				html_message.push('<div><b>Traceback:</b></div>');
+
 				for(var i=0, l=template.traceback.length; i < l; i++) {
 					var tb = template.traceback[i];
-					var indent = "                     ".substring(0, i*4);
-					traceback += indent + "<"+tb + " >\n";
+					var tb = this.escape_content('<'+tb+'>');
+					var indent = i*4;
+					html_message.push('<div style="padding-left:'+indent+'ex">'+tb+'</div>');
 				}
 			}
+			if(extra_error_info) 
+				html_message.push('<div><b>Details:</b>'+this.escape_content(extra_error_info)+'</div>');
+
+			html_message.push('</div>');
+			error.html_message = html_message.join('\n');
+
 			error.traceback = traceback;
 			error_context.locals.error = error;
-			return  this.escape_content(template.onerror(error_context));
+			return  template.onerror.expression(error_context);
 		} else throw e;
 	}	
 }
