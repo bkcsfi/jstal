@@ -226,10 +226,10 @@ jsTalTemplate.prototype = {
 						} while(true);
 					
 					} catch(e) {
-						if(typeof StopIteration != 'undefined') 
+						if(typeof StopIteration != 'undefined')  {
 							if(e != StopIteration)	// mochikit specific?
 								throw e;
-								
+						}
 						// get here, StopIteration isn't known
 						// we got an exception, throw it or not?
 						// I guess eat it for now
@@ -293,6 +293,46 @@ jsTalTemplate.prototype = {
 				attrs += " " + attributes.join(' ');
 			}
 		}
+
+		var tal_replace = tal_statements['replace'];
+		if(tal_replace) {
+			try {
+				// replace the content of this element
+				// with expression result
+				var content = tal_replace.expression(context);
+				console.debug('tal replace ',content);
+				if(typeof content == 'function')
+					content = content(context);
+					
+				if(content !== JAVASCRIPT_TAL_DEFAULT) {
+					if(content === JAVASCRIPT_TAL_NOTHING) {
+						return;
+					} else if(!tal_replace.structure) {
+						// escape_content maybe?
+						if(this.escape_content_match.test(content)) {
+							content = this.escape_content(content);
+						}
+					}
+					result_html.push(content);
+					return;
+				}
+			}
+			catch(e) {
+				// an error occured in content, do we have an on-error?
+				if(template.onerror) {
+					process_child_nodes = false;
+					var content = this.dispatch_error(context, template, e, tal_replace.error_hint);
+					if(JAVASCRIPT_TAL_DEFAULT !== content && 
+						JAVASCRIPT_TAL_NOTHING !== content) {
+						if(!template.onerror.structure)
+							content = this.escape_content(content);
+						result_html.push(content);
+					}
+					return;
+				} else throw e;
+			}
+		}
+		// process omit-tag
 		if(template.omit_tag === false) {
 			// never omit tag
 			result_html.push('<'+tagname+attrs+ '>');
@@ -332,15 +372,14 @@ jsTalTemplate.prototype = {
 				} else throw e;
 			}
 		}
-			
-		var process_child_nodes = true;
-		
-		try {
-			var tal_content = tal_statements['content'];
-			if(tal_content) {
+
+		// content and childnode processing
+		var process_child_nodes = true;		
+		var tal_content = tal_statements['content'];
+		if(tal_content) {
+			try {
 				// replace the content of this element
 				// with expression result
-				var tal_object = tal_content;
 				var content = tal_content.expression(context);
 				if(typeof content == 'function')
 					content = content(context);
@@ -358,19 +397,19 @@ jsTalTemplate.prototype = {
 					result_html.push(content);
 				}
 			} 
-		}
-		catch(e) {
-			// an error occured in content, do we have an on-error?
-			if(template.onerror) {
-				process_child_nodes = false;
-				var content = this.dispatch_error(context, template, e, template.error_hint);
-				if(JAVASCRIPT_TAL_DEFAULT !== content && 
-					JAVASCRIPT_TAL_NOTHING !== content) {
-					if(!template.onerror.structure)
-						content = this.escape_content(content);
-					result_html.push(content);
-				}
-			} else throw e;
+			catch(e) {
+				// an error occured in content, do we have an on-error?
+				if(template.onerror) {
+					process_child_nodes = false;
+					var content = this.dispatch_error(context, template, e, tal_content.error_hint);
+					if(JAVASCRIPT_TAL_DEFAULT !== content && 
+						JAVASCRIPT_TAL_NOTHING !== content) {
+						if(!template.onerror.structure)
+							content = this.escape_content(content);
+						result_html.push(content);
+					}
+				} else throw e;
+			}
 		}
 		if(process_child_nodes) {
 			var childNodes = template.childNodes;
@@ -387,6 +426,7 @@ jsTalTemplate.prototype = {
 		if(close_tag)
 			result_html.push(close_tag);
 	},
+	
 	"escape_content" : function(str) {
 		// replace & with &amp; < with &lt; and > with &gt;
 		return  String(str).replace('&', '&amp;').replace('<', '&lt;').replace('>','&gt;');
@@ -641,8 +681,22 @@ jsTalTemplate.prototype = {
 				if(0 == nodeValue.indexOf('structure ')) {
 					nodeValue = this.trim(nodeValue.substring(first_space+1));
 					node_info.structure = true;
+				} else if(0 == nodeValue.indexOf('text ')) {
+					nodeValue = this.trim(nodeValue.substring(first_space+1));
 				} 
-				
+				var expression_info = this.decode_expression(nodeValue, error_hint);
+				node_info.expression = 	expression_info.expression;
+				node_info.error_hint = error_hint;
+				break;
+			case "replace" :
+				var error_hint = '<'+tagname +" tal:replace='"+nodeValue + "' />";
+				node_info.structure = false;
+				if(0 == nodeValue.indexOf('structure ')) {
+					nodeValue = this.trim(nodeValue.substring(first_space+1));
+					node_info.structure = true;
+				} else if(0 == nodeValue.indexOf('text ')) {
+					nodeValue = this.trim(nodeValue.substring(first_space+1));
+				} 
 				var expression_info = this.decode_expression(nodeValue, error_hint);
 				node_info.expression = 	expression_info.expression;
 				node_info.error_hint = error_hint;
