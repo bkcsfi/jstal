@@ -84,7 +84,6 @@ jsTalTemplate.prototype = {
 	"html_expand_template" : function(template, context, result_html, repeat_inside) {
 		// expand this template and children, append to result_html
 		var tal_statements = template.tal_statements;
-
 		if(!repeat_inside) {
 			if(template.clone_context) // needed for tal:define or tal:repeat
 				context = this.clone_context(context);
@@ -122,6 +121,33 @@ jsTalTemplate.prototype = {
 						else
 							context.locals[expression.variable_name] = variable_value;
 					}
+				}
+			}
+
+			if(template.condition) {
+				try {
+					var process_element = template.condition(context);
+					if(typeof process_element == 'function')
+						process_element = process_element(context);
+						
+					if(!process_element || process_element === JAVASCRIPT_TAL_NOTHING)
+						return;	// do not process this element
+				}
+				catch(e) {
+					// an error occured, do we have an on-error?
+					if(template.onerror) {
+						var content = this.dispatch_error(context, template, e, 
+											tal_statements['condition'].error_hint);
+						if(JAVASCRIPT_TAL_DEFAULT !== content && 
+							JAVASCRIPT_TAL_NOTHING !== content) {
+							result_html.push('<div>');
+							if(!template.onerror.structure)
+								content = this.escape_content(content);
+							result_html.push(content);
+							result_html.push('</div>');
+						}
+						return;
+					} else throw e;
 				}
 			}
 			
@@ -438,6 +464,8 @@ jsTalTemplate.prototype = {
 			
 		if(tal_statements['define'] || tal_statements['repeat'])
 			e.clone_context = true;
+
+		e.condition = tal_statements['condition'] ? tal_statements['condition'].expression : false; // save a lookup later
 		
 		if(tal_statements['omit-tag'] !== undefined) {
 			e.sometimes_omit_tag = true;
@@ -584,6 +612,12 @@ jsTalTemplate.prototype = {
 				node_info.expression = 	expression_info.expression;
 				node_info.error_hint = error_hint;
 				break;
+			case "condition" :
+				var error_hint = '<'+tagname +" tal:condition='"+nodeValue + "' />";
+				var expression_info = this.decode_expression(nodeValue, error_hint);
+				node_info.expression = 	expression_info.expression;
+				node_info.error_hint = error_hint;
+				break;
 			case "on-error" :
 				var error_hint = '<'+tagname +" tal:on-error='"+nodeValue + "' />";
 				node_info.structure = false;
@@ -704,19 +738,22 @@ jsTalTemplate.prototype = {
 			var negate = function() {
 				var results = expression.apply(this, arguments);
 				if(typeof results == 'function') {
-					throw new Error("expression returned function, which cannot be negated: "+error_hint);
+					results = results.apply(this, arguments);
 				}
 				if(results) 
 					return false;
 				else
 					return true;
 			}
-			expression_type = 'boolean';
-			expession = negate;
-		} 
-		return {'expression':expression,
+			return {
+				'expression':negate,
+			    'type':'boolean'
+			};
+		}  else 
+			return {
+				'expression':expression,
 			    'type':expression_type
-			    };
+			};
 	},
 
 	"compile_string_expression" : function(expression_text, error_hint) {
