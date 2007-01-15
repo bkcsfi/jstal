@@ -1,12 +1,12 @@
 // jstal.js - javascript implementation of TAL
 // runs on the client
 
-// xmlns:jal="http://murkworks.com/namespaces/javascript_tal"
+// xmlns:jtal="http://murkworks.com/namespaces/javascript_tal"
 
 var JAVASCRIPT_TAL_NAMESPACE="http://murkworks.com/namespaces/javascript_tal";
 
-JAVASCRIPT_TAL_NOTHING = new Object();
-JAVASCRIPT_TAL_DEFAULT = new Object();
+var JAVASCRIPT_TAL_NOTHING = new Object();
+var JAVASCRIPT_TAL_DEFAULT = new Object();
 
 jsTalTemplate = function(args) {
 	this.template_element = args.template_element;
@@ -300,7 +300,6 @@ jsTalTemplate.prototype = {
 				// replace the content of this element
 				// with expression result
 				var content = tal_replace.expression(context);
-				console.debug('tal replace ',content);
 				if(typeof content == 'function')
 					content = content(context);
 					
@@ -599,14 +598,14 @@ jsTalTemplate.prototype = {
 					var expression = this.trim(nodeValue.substring(first_space+1));
 				} 
 				if(!repeat_var || !expression) {
-					throw new TypeError("repeat argument malformed: "+nodeValue);
+					throw new TypeError("tal:repeat argument malformed: "+nodeValue);
 				}
 				
 				var error_hint = '<'+tagname +" tal:content='"+nodeValue + "' />";
 				var expression_info = this.decode_expression(expression, error_hint);
 				if(expression_info.type == 'string' ||
  				   expression_info.type == 'boolean') 
- 				   throw new TypeError("repeat argument expression cannot be string or boolean type: "+nodeValue);
+ 				   throw new TypeError("tal:repeat argument expression cannot be string or boolean type: "+nodeValue);
  				   
 				node_info.expression = 	expression_info.expression;
 				node_info.repeat_var = repeat_var;
@@ -621,7 +620,7 @@ jsTalTemplate.prototype = {
 					var expression = expressions[i];
 					var first_space = expression.indexOf(' ');
 					if(first_space < 1) {
-						throw new TypeError("attribute argument missing attribute name: " +gerror_hint);
+						throw new TypeError("tal:attribute argument missing attribute name: " +gerror_hint);
 					}
 					var attribute_name = expression.substring(0, first_space);
 					var error_hint = "attribute '"+attribute_name + "' in :" +gerror_hint;
@@ -657,10 +656,13 @@ jsTalTemplate.prototype = {
 						first_space = expression.indexOf(' ');
 					}
 					if(first_space < 1) {
-						throw new TypeError("define argument missing variable name: '"+expressions[i]+"' in " +gerror_hint);
+						throw new TypeError("tal:define argument missing variable name: '"+expressions[i]+"' in " +gerror_hint);
 					}
 					var variable_name = expression.substring(0, first_space);
 					var error_hint = "define '"+variable_name + "' in :" +gerror_hint;
+					if(this.reserved_variable_names[variable_name])
+						throw new Error("tal:define reserved variable name cannot be redefined: "+error_hint);
+					
 					var expression = this.trim(expression.substring(first_space+1));
 					var expression_info = this.decode_expression(expression, 
 										error_hint);
