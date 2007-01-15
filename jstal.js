@@ -89,18 +89,70 @@ jsTalTemplate.prototype = {
 			if(template.clone_context) // needed for tal:define or tal:repeat
 				context = this.clone_context(context);
 
-			// process tal_define here
-							
+			var tal_define = tal_statements['define'];
+			if(tal_define) {
+				var expressions = tal_define.expressions;
+				for(var i=0, l=expressions.length; i < l; i++) {
+					var expression = expressions[i];
+					// do we try/except on attributes?
+					// not now, let em rip
+					try {
+						var variable_value = expression.expression(context);
+					} 
+					catch(e) {
+						// an error occured, do we have an on-error?
+						if(template.onerror) {
+							var content = this.dispatch_error(context, template, e, 
+												expression.error_hint);
+							if(JAVASCRIPT_TAL_DEFAULT !== content && 
+								JAVASCRIPT_TAL_NOTHING !== content) {
+								result_html.push('<div>');
+								if(!template.onerror.structure)
+									content = this.escape_content(content);
+								result_html.push(content);
+								result_html.push('</div>');
+							}
+							return;
+						} else throw e;
+					}
+					if(variable_value != JAVASCRIPT_TAL_DEFAULT) {
+						// not default, so assign it
+						if(expression.is_global)
+							context.globals[expression.variable_name] = variable_value;
+						else
+							context.locals[expression.variable_name] = variable_value;
+					}
+				}
+			}
+			
 			var tal_repeat = tal_statements['repeat'];
 			if(tal_repeat) {
 				var repeat_var = tal_repeat.repeat_var;
 				var locals = context.locals;
 				var repeat = context.repeat;
 
-				var repeat_source = tal_repeat.expression(context);
-				if(typeof repeat_source == 'function')
-					repeat_source = repeat_source(context);
-					
+				try {
+					var repeat_source = tal_repeat.expression(context);
+					if(typeof repeat_source == 'function')
+						repeat_source = repeat_source(context);
+				}
+				catch(e) {
+					// an error occured, do we have an on-error?
+					if(template.onerror) {
+						var content = this.dispatch_error(context, template, e, 
+											expression.error_hint);
+						if(JAVASCRIPT_TAL_DEFAULT !== content && 
+							JAVASCRIPT_TAL_NOTHING !== content) {
+							result_html.push('<div>');
+							if(!template.onerror.structure)
+								content = this.escape_content(content);
+							result_html.push(content);
+							result_html.push('</div>');
+						}
+						return;
+					} else throw e;
+				}
+				
 				// what type of iterable is it?
 				if(repeat_source instanceof Array) {
 					for(var i=0, l=repeat_source.length; i < l; i++) {
@@ -174,8 +226,6 @@ jsTalTemplate.prototype = {
 			for(var i=0, l=expressions.length; i < l; i++) {
 				var expression = expressions[i];
 				
-				// do we try/except on attributes?
-				// not now, let em rip
 				try {
 					var attribute_value = expression.expression(context);
 					if(typeof attribute_value == 'function')
@@ -408,8 +458,7 @@ jsTalTemplate.prototype = {
 			}
 		}
 		// expand children
-		console.debug('traceback ', traceback);
-		traceback = traceback.slice(0)
+		traceback = traceback.slice(0);	// copy current traceback
 		traceback.push(e.node_info.tagname + e.static_attributes);
 		var childNodes = [];
 		for(var node=element.firstChild; node; node=node.nextSibling) {
@@ -468,7 +517,7 @@ jsTalTemplate.prototype = {
 				for(var i=0, l=expressions.length; i < l; i++) {
 					var expression = expressions[i];
 					var first_space = expression.indexOf(' ');
-					if(first_space < 2) {
+					if(first_space < 1) {
 						throw new TypeError("attribute argument missing attribute name: " +gerror_hint);
 					}
 					var attribute_name = expression.substring(0, first_space);
@@ -486,6 +535,39 @@ jsTalTemplate.prototype = {
 					};
 					if(default_value) 	// remove from static elements
 						delete element_attributes[attribute_name];
+				}
+				node_info.expressions = expressions;
+				node_info.error_hint = gerror_hint;
+				break;
+			case "define":
+				// define can consist of multiple expressions,
+				// so break into expression list first
+				var gerror_hint = '<'+tagname +" tal:define='"+nodeValue + "' />";
+				var expressions = this.split_expressions(nodeValue);
+				for(var i=0, l=expressions.length; i < l; i++) {
+					var expression = expressions[i];
+					var is_global = false;
+					var first_space = expression.indexOf(' ');
+					if(-1 != expression.indexOf('global')) {
+						is_global = true;
+						expression = this.trim(expression.substring(first_space+1));
+						first_space = expression.indexOf(' ');
+					}
+					if(first_space < 1) {
+						throw new TypeError("define argument missing variable name: '"+expressions[i]+"' in " +gerror_hint);
+					}
+					var variable_name = expression.substring(0, first_space);
+					var error_hint = "define '"+variable_name + "' in :" +gerror_hint;
+					var expression = this.trim(expression.substring(first_space+1));
+					var expression_info = this.decode_expression(expression, 
+										error_hint);
+					
+					expressions[i] = {
+						'expression':expression_info.expression,
+						'variable_name':variable_name,
+						'is_global':is_global,
+						'error_hint':error_hint
+					};
 				}
 				node_info.expressions = expressions;
 				node_info.error_hint = gerror_hint;
