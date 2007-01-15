@@ -293,8 +293,46 @@ jsTalTemplate.prototype = {
 				attrs += " " + attributes.join(' ');
 			}
 		}
-		
-		result_html.push('<'+tagname+attrs+ '>');
+		if(template.omit_tag === false) {
+			// never omit tag
+			result_html.push('<'+tagname+attrs+ '>');
+		} else if(template.omit_tag === true) {
+			// always omit tag
+			close_tag = null;
+		} else {
+			// maybe omit tag, which also omits attrs
+			try {
+				var omit_tag = template.omit_tag(context);
+				if(typeof omit_tag == 'function')
+					omit_tag = omit_tag(context);
+					
+				if(omit_tag === JAVASCRIPT_TAL_NOTHING ||
+				   omit_tag === JAVASCRIPT_TAL_DEFAULT ||
+				   !omit_tag) {
+				   // include tag
+					result_html.push('<'+tagname+attrs+ '>');
+			    } else
+					close_tag = null;			    
+			}
+			catch(e) {
+				// an error occured, do we have an on-error?
+				if(template.onerror) {
+					process_child_nodes = false;
+					var content = this.dispatch_error(context, template, e, 
+										tal_statements['omit-tag'].error_hint);
+					if(JAVASCRIPT_TAL_DEFAULT !== content && 
+						JAVASCRIPT_TAL_NOTHING !== content) {
+						result_html.push('<div>');
+						if(!template.onerror.structure)
+							content = this.escape_content(content);
+						result_html.push(content);
+						result_html.push('</div>');
+					}
+					return;
+				} else throw e;
+			}
+		}
+			
 		var process_child_nodes = true;
 		
 		try {
@@ -402,7 +440,7 @@ jsTalTemplate.prototype = {
 		for(var i=0, l=attributes.length; i < l; i++) {
 			var attribute = attributes[i];
 			var nodeValue = attribute.nodeValue;
-			if(!nodeValue || typeof nodeValue != 'string') {
+			if(typeof nodeValue != 'string') {
 				// IE returns all attributes, like onmouseup, etc
 				continue;
 			}
@@ -413,6 +451,9 @@ jsTalTemplate.prototype = {
 			node_info.nodeValue = nodeValue;
 
 			if(node_info.namespaceURI != this.jstal_namespace) {
+				if(!nodeValue)
+					continue;	// sorry, IE returns all kinds of crap so
+								// all empty attributes are thrown out
 				// if a regular attribute and needs namespace decl, add it to map
 				if(node_info.namespaceURI && 
 					parent_namespace_map[node_info.namespaceURI] === undefined &&
@@ -466,15 +507,9 @@ jsTalTemplate.prototype = {
 			e.clone_context = true;
 
 		e.condition = tal_statements['condition'] ? tal_statements['condition'].expression : false; // save a lookup later
+		e.omit_tag = tal_statements['omit-tag'] ? tal_statements['omit-tag'].expression : false;
 		
-		if(tal_statements['omit-tag'] !== undefined) {
-			e.sometimes_omit_tag = true;
-			if(!tal_statements['omit-tag'].nodeValue) {
-				// empty string means we will always 
-				// omit the tag, so don't need to test during
-				// expansion
-				e.always_omit_tag = true;
-			} 
+		if(e.omit_tag !== null) {
 			if(e.declare_namespaces) {
 				// this tag might get left out, so
 				// tell children we're not going to declare
@@ -615,6 +650,21 @@ jsTalTemplate.prototype = {
 			case "condition" :
 				var error_hint = '<'+tagname +" tal:condition='"+nodeValue + "' />";
 				var expression_info = this.decode_expression(nodeValue, error_hint);
+				node_info.expression = 	expression_info.expression;
+				node_info.error_hint = error_hint;
+				break;
+			case "omit-tag" :
+				var error_hint = '<'+tagname +" tal:omit-tag='"+nodeValue + "' />";
+				if(!nodeValue.length) {
+					// empty string means always omit tag
+					var expression_info =  {
+											'expression':true,
+											'type':'boolean'
+										   };
+
+				} else {
+					var expression_info = this.decode_expression(nodeValue, error_hint);
+				}
 				node_info.expression = 	expression_info.expression;
 				node_info.error_hint = error_hint;
 				break;
