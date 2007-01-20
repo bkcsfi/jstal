@@ -35,6 +35,7 @@ jsTalTemplate = function(args) {
 		
 	this.strip_space_re = /[^ ]+/;	// .match returns a string of text w/o whitespace
 	this.escape_content_match = /&|<|>/; // match if we need to escape content
+	this.compile();
 }
 
 jsTalTemplate.prototype = {
@@ -166,7 +167,7 @@ jsTalTemplate.prototype = {
 					// an error occured, do we have an on-error?
 					if(template.onerror) {
 						var content = this.dispatch_error(context, template, e, 
-											expression.error_hint);
+											expression ? expression.error_hint : null);
 						if(JAVASCRIPT_TAL_DEFAULT !== content && 
 							JAVASCRIPT_TAL_NOTHING !== content) {
 							result_html.push('<div>');
