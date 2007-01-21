@@ -764,26 +764,26 @@ jsTalTemplate.prototype = {
 		// declarations. 
 		// namespace_map is a mapping of namespaces already declared
 		// by a parent node
+		
+		// note that IE (and FF when not parsing xhtml, does not
+		// support localName or prefix, so we assume we don't get it
+		
 		var namespaceURI = node.namespaceURI;
-	
-		if(!node.localName) {
-			// could be stupid IE
-			var local_name =  node.nodeName;
-			var colon = local_name.indexOf(':');
-			if(-1 != colon) {
-				var prefix = local_name.substring(0, colon);
-				local_name = local_name.substring(colon+1);
-				if(!namespaceURI) {
-					// temporary workaround for IE not supporting
-					// namespaceURI
-					namespaceURI = this.prefix_to_namespace_map[prefix];
-				}
-			} else
-				var prefix = null;
+		var local_name = node.localName || node.nodeName;
+		var colon = local_name.indexOf(':');
+		
+		if(-1 != colon) {
+			var prefix = local_name.substring(0, colon);
+			local_name = local_name.substring(colon+1);
 		} else {
-			var local_name = node.localName;
 			var prefix = node.prefix || null;
 		}
+		
+		if(!namespaceURI) {
+			// a hack 
+			namespaceURI = this.prefix_to_namespace_map[prefix];
+		}
+
 		if(parent_namespace_map[namespaceURI])
 			prefix = parent_namespace_map[namespaceURI]; // use parent's prefix
 			
