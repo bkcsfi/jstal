@@ -936,8 +936,15 @@ jsTalTemplate.prototype = {
 					start_index = 1;	// skip this step
 				} else {
 					// generic variable, test locals first, then globals
-					function_text.push('if(context.locals.' + steps[0] + ' !== undefined) { var c = context.locals; }'); // establish current context
-					function_text.push('else if(context.globals.' + steps[0] + ' !== undefined) { var c = context.globals; }'); // establish current context
+					// we have to see if the step contains a dot, if it does
+					// we need to determine the context in a special way.
+					var step = steps[0];
+					var first_dot = step.indexOf('.');
+					if(-1 != first_dot) {
+						step = step.substring(0, first_dot);
+					} 
+					function_text.push('if(context.locals.' + step + ' !== undefined) { var c = context.locals; }'); // establish current context
+					function_text.push('else if(context.globals.' + step + ' !== undefined) { var c = context.globals; }'); // establish current context
 					function_text.push('else break;');
 				}
 				for(var is=start_index, ls=steps.length; is < ls; is++) {
