@@ -275,8 +275,8 @@ jsTalTemplate.prototype = {
 						return;
 					} else throw e;
 				}
-				if(attribute_value != JAVASCRIPT_TAL_NOTHING) {
-					if(attribute_value == JAVASCRIPT_TAL_DEFAULT) {
+				if(attribute_value != JAVASCRIPT_TAL_NOTHING ) {
+					if((attribute_value == JAVASCRIPT_TAL_DEFAULT) || (attribute_value == null)) {
 						// default, is there one?
 						if(expression.default_value != undefined) {
 							attributes.push(expression.attribute_name + '="' + 
@@ -305,7 +305,7 @@ jsTalTemplate.prototype = {
 					content = content(context);
 					
 				if(content !== JAVASCRIPT_TAL_DEFAULT) {
-					if(content === JAVASCRIPT_TAL_NOTHING) {
+					if(content === JAVASCRIPT_TAL_NOTHING || content == null) {
 						return;
 					} else if(!tal_replace.structure) {
 						// escape_content maybe?
@@ -386,7 +386,7 @@ jsTalTemplate.prototype = {
 					
 				if(content !== JAVASCRIPT_TAL_DEFAULT) {
 					process_child_nodes = false;
-					if(content === JAVASCRIPT_TAL_NOTHING) {
+					if(content === JAVASCRIPT_TAL_NOTHING || content == null) {
 						content = '';
 					} else if(!tal_content.structure) {
 						// escape_content maybe?
