@@ -35,6 +35,17 @@ jsTalTemplate = function(args) {
 		
 	this.strip_space_re = /[^ ]+/;	// .match returns a string of text w/o whitespace
 	this.escape_content_match = /&|<|>/; // match if we need to escape content
+	this.allowed_blank_attributes="value "; // jstal doesn't propogate empty attributes
+											// because IE returns tons of useless
+											// attributes that were not part of the
+											// original template.
+											// however some attributes need to be
+											// passed through to the result
+											// output html. Put those attribute
+											// names here, we'll use indexOf to 
+											// see if the attribute is in this
+											// 'list'. 
+	
 	this.compile();
 }
 
@@ -491,9 +502,9 @@ jsTalTemplate.prototype = {
 			node_info.nodeValue = nodeValue;
 
 			if(node_info.namespaceURI != this.jstal_namespace) {
-				if(!nodeValue)
+				if(!nodeValue && -1 == this.allowed_blank_attributes.indexOf(node_info.local_name))
 					continue;	// sorry, IE returns all kinds of crap so
-								// all empty attributes are thrown out
+								// most empty attributes are thrown out
 				// if a regular attribute and needs namespace decl, add it to map
 				if(node_info.namespaceURI && 
 					parent_namespace_map[node_info.namespaceURI] === undefined &&
