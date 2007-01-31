@@ -173,6 +173,13 @@ jsTalTemplate.prototype = {
 					var repeat_source = tal_repeat.expression(context);
 					if(typeof repeat_source == 'function')
 						repeat_source = repeat_source(context);
+						
+					if(repeat_source === JAVASCRIPT_TAL_DEFAULT)
+						throw new Error("repeat source has cannot be 'default'");
+					else if(repeat_source === null)
+						throw new Error("repeat source has cannot be null");
+					else if(repeat_source === JAVASCRIPT_TAL_NOTHING)
+						repeat_source = []; // cast nothing to the empty set
 				}
 				catch(e) {
 					// an error occured, do we have an on-error?
