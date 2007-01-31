@@ -35,6 +35,8 @@ jsTalTemplate = function(args) {
 		
 	this.strip_space_re = /[^ ]+/;	// .match returns a string of text w/o whitespace
 	this.escape_content_match = /&|<|>/; // match if we need to escape content
+	this.string_path_end_match = /[^\.\w]/;	// anything not a word and not a dot
+	
 	this.allowed_blank_attributes="value "; // jstal doesn't propogate empty attributes
 											// because IE returns tons of useless
 											// attributes that were not part of the
@@ -885,12 +887,85 @@ jsTalTemplate.prototype = {
 		// generates a function object that returns evaluated string
 		// for now, just return the text
 
-		var function_text = [];
-		function_text.push('return "'+expression_text+'";');
+		// if there isn't a $ in the string, there's no string interp
+		var temp_marker = String.fromCharCode(1);
+		var s = expression_text.replace('$$', temp_marker);	// later we'll switch these to single $
+		if(-1 == s.indexOf('$')) {
+			// still no expressions in there
+			var expression_text = s.replace(temp_marker, '$');
+			return function(context) {
+				return expression_text;
+			}
+/*			var function_text = [];
+			function_text.push('return "'+expression_text+'";');
+	
+			function_text = function_text.join("\n");
+			return new Function('context', function_text); */
+		}
+		// get here, we have $ expansions, we only handle simple path expressions
+		// so, you can NOT do this  string:some ${$myvar}
+		// need this quickly, so hack this brute force
+		// look for  $something or ${something}
+		var parts = [];
+		while(s.length > 0) {
+			var next_marker = s.indexOf('$');
+			if(-1 == next_marker) {
+				var this_section = s;
+				s = '';
+			} else if(0 != next_marker) {
+				var this_section = s.substring(0, next_marker);
+				s = s.substring(next_marker);
+			} else { // otherwise next_marker == 0
+				// expand path, we're at $
+				if(s.charAt(1) == '{') {
+					var closing_brace = s.indexOf('}');
+					if(-1 == closing_brace) 
+						throw new Error("string: missing closing '}':"+expression_text+", "+error_hint);
+						
+					var path = s.substring(2, closing_brace);
+					s = s.substring(closing_brace+1);
+				} else { // find the next non-text character (except we allow .)
+					s = s.substring(1);
+					var closer = s.search(this.string_path_end_match);
+					if(-1 == closer) {
+						path = s;
+						s = '';
+					} else {
+						path = s.substring(0, closer);
+						s = s.substring(closer);
+					}						
+				}
+				// get here, compile path expression
+				var expression = this.compile_path_expression(path, error_hint);
+				parts.push(expression);
+				continue;
+			}			
+			parts.push(this_section.replace(temp_marker, '$'));
+		}	// end while
 
-		function_text = function_text.join("\n");
-		return new Function('context', function_text);
-		
+		// now, return a function that interprets the string at runtime
+		return function(context) {
+			var res = [];
+			// closure on parts specified above
+			for(var i=0, l=parts.length; i < l; i++) {
+				var part = parts[i];
+				if(typeof part == 'string')
+					res.push(part);
+				else {
+					var r = part(context);	// expand the expression
+					if(typeof r == 'function')
+						r = r(context);
+					if(r === JAVASCRIPT_TAL_NOTHING || r === null) // is it right to skip null?
+						continue;
+					else if(r === JAVASCRIPT_TAL_DEFAULT) {
+						// what the heck does this mean?
+						throw new TypeError("string: interpolation got 'default', expanding:"+error_hint);
+					} 
+					res.push(part(context));
+				}
+			} // end for
+			return res.join("");
+		}
 	},
 
 	"compile_javascript_expression" : function(expression_text, error_hint) {
