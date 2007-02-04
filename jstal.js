@@ -48,6 +48,11 @@ jsTalTemplate = function(args) {
 											// see if the attribute is in this
 											// 'list'. 
 	
+	this.string_interpolation_markers = [	// string interpolation uses ${path}
+		['{', '}'],							// but {} conflicts with xslt attributes
+		['[', ']'],							// so allow alternates matches using this property
+	];
+	
 	this.compile();
 }
 
@@ -144,7 +149,7 @@ jsTalTemplate.prototype = {
 					if(typeof process_element == 'function')
 						process_element = process_element(context);
 						
-					if(!process_element || process_element === JAVASCRIPT_TAL_NOTHING)
+					if(process_element === JAVASCRIPT_TAL_NOTHING || !this.to_bool(process_element))
 						return;	// do not process this element
 				}
 				catch(e) {
@@ -368,7 +373,7 @@ jsTalTemplate.prototype = {
 					
 				if(omit_tag === JAVASCRIPT_TAL_NOTHING ||
 				   omit_tag === JAVASCRIPT_TAL_DEFAULT ||
-				   !omit_tag) {
+				   !this.to_bool(omit_tag)) {
 				   // include tag
 					result_html.push('<'+tagname+attrs+ '>');
 			    } else
@@ -896,11 +901,6 @@ jsTalTemplate.prototype = {
 			return function(context) {
 				return expression_text;
 			}
-/*			var function_text = [];
-			function_text.push('return "'+expression_text+'";');
-	
-			function_text = function_text.join("\n");
-			return new Function('context', function_text); */
 		}
 		// get here, we have $ expansions, we only handle simple path expressions
 		// so, you can NOT do this  string:some ${$myvar}
@@ -917,10 +917,18 @@ jsTalTemplate.prototype = {
 				s = s.substring(next_marker);
 			} else { // otherwise next_marker == 0
 				// expand path, we're at $
-				if(s.charAt(1) == '{') {
-					var closing_brace = s.indexOf('}');
+				var string_interpolation_markers = this.string_interpolation_markers;
+				var next_char = s.charAt(1);
+				for(var i=0, l=string_interpolation_markers.length; i < l; i++) {
+					var open_marker = string_interpolation_markers[i][0];
+					var close_marker = string_interpolation_markers[i][1];
+					if(next_char == open_marker)
+						break;
+				}
+				if(next_char == open_marker) {
+					var closing_brace = s.indexOf(close_marker);
 					if(-1 == closing_brace) 
-						throw new Error("string: missing closing '}':"+expression_text+", "+error_hint);
+						throw new Error("string: missing closing marker '"+close_marker+"' : "+expression_text+", "+error_hint);
 						
 					var path = s.substring(2, closing_brace);
 					s = s.substring(closing_brace+1);
@@ -936,8 +944,10 @@ jsTalTemplate.prototype = {
 					}						
 				}
 				// get here, compile path expression
-				var expression = this.compile_path_expression(path, error_hint);
-				parts.push(expression);
+				if(path) {
+					var expression = this.compile_path_expression(path, error_hint);
+					parts.push(expression);
+				}
 				continue;
 			}			
 			parts.push(this_section.replace(temp_marker, '$'));
@@ -1068,6 +1078,28 @@ jsTalTemplate.prototype = {
 		return o;
 	},
 
+	"to_bool" : function(value) {
+		// convert a value to a bool and return true or false
+		if(value === true || value === false)
+			return value;
+		if(value === JAVASCRIPT_TAL_NOTHING)
+			return false;
+		if(value === JAVASCRIPT_TAL_DEFAULT)
+			return value;	// don't know how to handle this, depends on method
+		if(value == null)
+			return false;
+		if(value.constructor == Array || value.constructor == String) {
+			if(value.length)
+				return true;
+			else
+				return false;
+		}
+		if(value)
+			return true;
+		else
+			return false;
+	},
+	
 	"dispatch_error" : function(context, template, e, extra_error_info) {
 		if(template.onerror) {
 			var error_context = this.clone_context(context);
