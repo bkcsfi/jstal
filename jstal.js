@@ -981,8 +981,11 @@ jsTalTemplate.prototype = {
 	"compile_javascript_expression" : function(expression_text, error_hint) {
 		// generates a function object from the expression text
 
-		var function_text = [];
-		return new Function('context', expression_text);		
+		try {
+			return new Function('context', expression_text);		
+		} catch(e) {
+			throw new Error("Got exception: "+e.message + ' while compiling:\n'+expression_text+ '\nerror_hint:'+error_hint);
+		}
 	},
 	
 	"compile_path_expression" : function(expression_text, error_hint) {
@@ -1064,9 +1067,13 @@ jsTalTemplate.prototype = {
 		}
 		if(!error_hint)
 			error_hint = expression;
-		function_text.push('throw new Error("expression evaluation failed: ' + error_hint + '");');
+		// IE does not like embedded \r\n in Function source, so 
+		// replace with escaped newline
+		function_text.push('throw new Error("expression evaluation failed: ' + String(error_hint).replace(/\r\n/g,"\\n") + '");');
 		function_text = function_text.join("\n");
-		return new Function('context', function_text);
+
+		return this.compile_javascript_expression(function_text, error_hint);
+		
 	},
 	
 	"copy_object": function(obj) {
