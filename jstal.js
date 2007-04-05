@@ -300,7 +300,7 @@ jsTalTemplate.prototype = {
 						return;
 					} else throw e;
 				}
-				if(attribute_value != JAVASCRIPT_TAL_NOTHING ) {
+				if((attribute_value != JAVASCRIPT_TAL_NOTHING) && (attribute_value !== false)) {
 					if((attribute_value == JAVASCRIPT_TAL_DEFAULT) || (attribute_value == null)) {
 						// default, is there one?
 						if(expression.default_value != undefined) {
@@ -308,7 +308,7 @@ jsTalTemplate.prototype = {
 												expression.default_value + '"');
 						}
 					} else {
-						// got a value, add it
+						// got a value, add it 
 						attributes.push(expression.attribute_name + '="' + 
 											attribute_value + '"');
 					}
