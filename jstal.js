@@ -11,7 +11,7 @@ var JAVASCRIPT_TAL_DEFAULT = new Object();
 jsTalTemplate = function(args) {
 	this.template_element = args.template_element;
 	if(!this.template_element) 
-	    throw new TypeError("dom_element must be defined");
+	    throw new TypeError("template_element must be defined");
 	
 	// prefix_to_namespace_map is used by IE to map
 	// a prefix back to a namespaceURI because
