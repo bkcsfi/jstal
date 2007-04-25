@@ -104,6 +104,9 @@ jsTalTemplate.prototype = {
 		// expand this template and children, append to result_html
 		var tal_statements = template.tal_statements;
 		if(!repeat_inside) {
+			// the following code is not executed if
+			// we're expanding a repeat.
+			
 			if(template.clone_context) // needed for tal:define or tal:repeat
 				context = this.clone_context(context);
 
@@ -112,8 +115,6 @@ jsTalTemplate.prototype = {
 				var expressions = tal_define.expressions;
 				for(var i=0, l=expressions.length; i < l; i++) {
 					var expression = expressions[i];
-					// do we try/except on attributes?
-					// not now, let em rip
 					try {
 						var variable_value = expression.expression(context);
 					} 
@@ -263,7 +264,7 @@ jsTalTemplate.prototype = {
 				}
 				return;
 			}
-		}
+		} // end if !repeat_inside
 		
 		var node_info = template.node_info;
 		var tagname = node_info.tagname;
