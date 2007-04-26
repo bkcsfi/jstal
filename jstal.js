@@ -851,13 +851,13 @@ jsTalTemplate.prototype = {
 		if(0 == expression_text.indexOf('string:')) {
 			// a string expression
 			expression_text = this.trim(expression_text.substr(7));
-			var expression = this.compile_string_expression(expression_text,error_hint);
+			var expression = this.compile_string_or_eval_expression(expression_text,error_hint, 'string');
 			expression_type = 'string';
 		} else if(0 == expression_text.indexOf('eval:')) {
 			// a string expression
 			expression_text = this.trim(expression_text.substr(5));
-			var expression = this.compile_eval_expression(expression_text,error_hint);
-			expression_type = 'call';
+			var expression = this.compile_string_or_eval_expression(expression_text,error_hint, 'eval');
+			expression_type = 'eval';
 		} else if(0 == expression_text.indexOf('javascript:')) {
 			// a string expression
 			expression_text = this.trim(expression_text.substr(11));
@@ -892,25 +892,13 @@ jsTalTemplate.prototype = {
 			    'type':expression_type
 			};
 	},
-	"compile_eval_expression" : function(expression_text, error_hint) {
-		var expression = this.compile_string_expression(expression_text, error_hint, 'eval:');
-		var callable_function = function(context) {
-			var eval_text = expression(context);
-			return eval(
-					String("(").concat(eval_text).concat(')')
-			); 
-					// string concats in case eval_text contains double quote
-		}
-		
-		return callable_function;
-	},
-
-	"compile_string_expression" : function(expression_text, error_hint, expression_type) {
+	
+	"compile_string_or_eval_expression" : function(expression_text, error_hint, expression_type) {
 		// generates a function object that returns evaluated string
 		// for now, just return the text
 
 		if(!expression_type)
-			expression_type = 'string:';
+			expression_type = 'string';
 			
 		// if there isn't a $ in the string, there's no string interp
 		var temp_marker = String.fromCharCode(1);
@@ -918,14 +906,20 @@ jsTalTemplate.prototype = {
 		if(-1 == s.indexOf('$')) {
 			// still no expressions in there
 			var expression_text = s.replace(temp_marker, '$');
-			return function(context) {
-				return expression_text;
+			if(expression_type == 'string') {
+				return function(context) {
+					return expression_text;
+				}
+			} else {
+				return function(context) {
+					return eval(String('(').concat(expression_text).concat(")"));
+				}			
 			}
 		}
 		// get here, we have $ expansions, we only handle simple path expressions
 		// so, you can NOT do this  string:some ${$myvar}
 		// need this quickly, so hack this brute force
-		// look for  $something or ${something}
+		// look for  $something or ${something} or $[something]
 		var parts = [];
 		while(s.length > 0) {
 			var next_marker = s.indexOf('$');
@@ -948,7 +942,7 @@ jsTalTemplate.prototype = {
 				if(next_char == open_marker) {
 					var closing_brace = s.indexOf(close_marker);
 					if(-1 == closing_brace) 
-						throw new Error(expression_type  + " missing closing marker '"+close_marker+"' : "+expression_text+", "+error_hint);
+						throw new Error(expression_type  + ": missing closing marker '"+close_marker+"' : "+expression_text+", "+error_hint);
 						
 					var path = s.substring(2, closing_brace);
 					s = s.substring(closing_brace+1);
@@ -973,8 +967,35 @@ jsTalTemplate.prototype = {
 			parts.push(this_section.replace(temp_marker, '$'));
 		}	// end while
 
-		// now, return a function that interprets the string at runtime
-		return function(context) {
+		if(expression_type == 'string') {		
+			// now, return a function that interprets the string at runtime
+			return function(context) {
+				var res = [];
+				// closure on variable 'parts' specified above
+				for(var i=0, l=parts.length; i < l; i++) {
+					var part = parts[i];
+					if(typeof part == 'string')
+						res.push(part);
+					else {
+						var r = part(context);	// expand the expression
+						if(typeof r == 'function')
+							r = r(context);
+						if(r === JAVASCRIPT_TAL_NOTHING || r === null) // is it right to skip null?
+							continue;
+						else if(r === JAVASCRIPT_TAL_DEFAULT) {
+							// what the heck does this mean?
+							throw new TypeError(expression_type + ": interpolation got 'default', expanding:"+error_hint);
+						} 
+						res.push(part(context));
+					}
+				} // end for
+				return res.join("");
+			}
+		} else {
+			// return eval 
+			var variable_expressions = ['context'];
+			var variable_names = ['context'];
+
 			var res = [];
 			// closure on variable 'parts' specified above
 			for(var i=0, l=parts.length; i < l; i++) {
@@ -982,19 +1003,26 @@ jsTalTemplate.prototype = {
 				if(typeof part == 'string')
 					res.push(part);
 				else {
-					var r = part(context);	// expand the expression
-					if(typeof r == 'function')
-						r = r(context);
-					if(r === JAVASCRIPT_TAL_NOTHING || r === null) // is it right to skip null?
-						continue;
-					else if(r === JAVASCRIPT_TAL_DEFAULT) {
-						// what the heck does this mean?
-						throw new TypeError(expression_type + " interpolation got 'default', expanding:"+error_hint);
-					} 
-					res.push(part(context));
+					var variable_name = 'jst_tal_var_'+i;
+					variable_expressions.push(part);
+					variable_names.push(variable_name);
+					res.push(variable_name);
 				}
 			} // end for
-			return res.join("");
+			var expression_text = res.join("");
+			return function(context) {
+				var inner_context = {};
+				for(var i=0, l=variable_expressions.length; i < l; i++) {
+					var expression = variable_expressions[i];
+					if(i) {
+						var value = expression(context);
+					} else
+						var value = context;
+					inner_context[variable_names[i]] = value;
+				}				
+				with(inner_context)
+					return eval(String('(').concat(expression_text).concat(")"));
+			}			
 		}
 	},
 
