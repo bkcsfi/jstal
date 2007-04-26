@@ -230,7 +230,7 @@ jsTalTemplate.prototype = {
 						} else if (typeof repeat_source.__iterable__ == 'function') {
 							repeat_source = repeat_source.__iterable__();						
 						} else {
-							throw new TypeError("repeat source is not an array or iterable: "+tal_repeat.error_hint);
+							throw new TypeError("repeat source is not an array or iterable type, constructor '"+String(repeat_source.constructor)+ "', "+tal_repeat.error_hint);
 						}
 					}
 					// use next() function
@@ -835,6 +835,7 @@ jsTalTemplate.prototype = {
 		// string: some string
 		// path: some path
 		// javascript: expression (declares a function whose sole arg is context, must return something)
+		// eval: expression like string, but it's eval()'d and that's the result
 		// default expression type is path
 		// not: is a valid prefix
 		
@@ -852,6 +853,11 @@ jsTalTemplate.prototype = {
 			expression_text = this.trim(expression_text.substr(7));
 			var expression = this.compile_string_expression(expression_text,error_hint);
 			expression_type = 'string';
+		} else if(0 == expression_text.indexOf('eval:')) {
+			// a string expression
+			expression_text = this.trim(expression_text.substr(5));
+			var expression = this.compile_eval_expression(expression_text,error_hint);
+			expression_type = 'call';
 		} else if(0 == expression_text.indexOf('javascript:')) {
 			// a string expression
 			expression_text = this.trim(expression_text.substr(11));
@@ -867,16 +873,14 @@ jsTalTemplate.prototype = {
 			var expression = this.compile_path_expression(expression_text, error_hint);
 			expression_type = 'path';
 		}
+		var to_bool = this.to_bool;
 		if(negate_expression_results) {
 			var negate = function() {
 				var results = expression.apply(this, arguments);
 				if(typeof results == 'function') {
 					results = results.apply(this, arguments);
 				}
-				if(results) 
-					return false;
-				else
-					return true;
+				return ! to_bool(results);
 			}
 			return {
 				'expression':negate,
@@ -888,11 +892,26 @@ jsTalTemplate.prototype = {
 			    'type':expression_type
 			};
 	},
+	"compile_eval_expression" : function(expression_text, error_hint) {
+		var expression = this.compile_string_expression(expression_text, error_hint, 'eval:');
+		var callable_function = function(context) {
+			var eval_text = expression(context);
+			return eval(
+					String("(").concat(eval_text).concat(')')
+			); 
+					// string concats in case eval_text contains double quote
+		}
+		
+		return callable_function;
+	},
 
-	"compile_string_expression" : function(expression_text, error_hint) {
+	"compile_string_expression" : function(expression_text, error_hint, expression_type) {
 		// generates a function object that returns evaluated string
 		// for now, just return the text
 
+		if(!expression_type)
+			expression_type = 'string:';
+			
 		// if there isn't a $ in the string, there's no string interp
 		var temp_marker = String.fromCharCode(1);
 		var s = expression_text.replace('$$', temp_marker);	// later we'll switch these to single $
@@ -929,7 +948,7 @@ jsTalTemplate.prototype = {
 				if(next_char == open_marker) {
 					var closing_brace = s.indexOf(close_marker);
 					if(-1 == closing_brace) 
-						throw new Error("string: missing closing marker '"+close_marker+"' : "+expression_text+", "+error_hint);
+						throw new Error(expression_type  + " missing closing marker '"+close_marker+"' : "+expression_text+", "+error_hint);
 						
 					var path = s.substring(2, closing_brace);
 					s = s.substring(closing_brace+1);
@@ -957,7 +976,7 @@ jsTalTemplate.prototype = {
 		// now, return a function that interprets the string at runtime
 		return function(context) {
 			var res = [];
-			// closure on parts specified above
+			// closure on variable 'parts' specified above
 			for(var i=0, l=parts.length; i < l; i++) {
 				var part = parts[i];
 				if(typeof part == 'string')
@@ -970,7 +989,7 @@ jsTalTemplate.prototype = {
 						continue;
 					else if(r === JAVASCRIPT_TAL_DEFAULT) {
 						// what the heck does this mean?
-						throw new TypeError("string: interpolation got 'default', expanding:"+error_hint);
+						throw new TypeError(expression_type + " interpolation got 'default', expanding:"+error_hint);
 					} 
 					res.push(part(context));
 				}
