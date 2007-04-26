@@ -912,7 +912,10 @@ jsTalTemplate.prototype = {
 				}
 			} else {
 				return function(context) {
-					return eval(String('(').concat(expression_text).concat(")"));
+					with(context)
+						with(context.globals)
+							with(context.locals)
+								return eval(String('(').concat(expression_text).concat(")"));
 				}			
 			}
 		}
@@ -1020,8 +1023,11 @@ jsTalTemplate.prototype = {
 						var value = context;
 					inner_context[variable_names[i]] = value;
 				}				
-				with(inner_context)
-					return eval(String('(').concat(expression_text).concat(")"));
+				with(context)
+					with(context.globals)
+						with(context.locals)
+							with(inner_context)
+								return eval(String('(').concat(expression_text).concat(")"));
 			}			
 		}
 	},
