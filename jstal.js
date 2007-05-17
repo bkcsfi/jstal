@@ -923,6 +923,7 @@ jsTalTemplate.prototype = {
 		// so, you can NOT do this  string:some ${$myvar}
 		// need this quickly, so hack this brute force
 		// look for  $something or ${something} or $[something]
+		// see this.string_interpolation_markers for list of marker pairs
 		var parts = [];
 		while(s.length > 0) {
 			var next_marker = s.indexOf('$');
@@ -1047,6 +1048,8 @@ jsTalTemplate.prototype = {
 		// and returns a value
 		// TALES spec, path:a/b/c  | nothing
 		// maybe later, allowences for E4X or xpath
+		// note, we examine the next step only if the result of the path
+		// is 'undefined', 'null' is not undefined.
 		
 		var terminals = expression_text.split('|');
 		var expressions = [];
@@ -1072,7 +1075,7 @@ jsTalTemplate.prototype = {
 				var start_index = 0;
 				// TODO: in the future, we may wish to optimize
 				// lookups by allowing something like options/x.y.z
-				// where x or y might end up being undefined
+				// where x or y might end up being undefined.
 				// to allow this, I'd need to push a try /catch
 				// around the do / while. I'm not doing that right now
 				// because setting up exception handling might have
@@ -1098,6 +1101,9 @@ jsTalTemplate.prototype = {
 					// generic variable, test locals first, then globals
 					// we have to see if the step contains a dot, if it does
 					// we need to determine the context in a special way.
+					// so if step == 'a.b', then the starting context is
+					// 'context.locals.a', leave off '.b' when determining the
+					// starting context
 					var step = steps[0];
 					var first_dot = step.indexOf('.');
 					if(-1 != first_dot) {
