@@ -50,7 +50,7 @@ jsTalTemplate = function(args) {
 	
 	this.string_interpolation_markers = [	// string interpolation uses ${path}
 		['{', '}'],							// but {} conflicts with xslt attributes
-		['[', ']'],							// so allow alternates matches using this property
+		['[', ']']							// so allow alternates matches using this property
 	];
 	
 	this.compile();
