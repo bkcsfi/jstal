@@ -506,10 +506,14 @@ jsTalTemplate.prototype = {
 		for(var i=0, l=attributes.length; i < l; i++) {
 			var attribute = attributes[i];
 			var nodeValue = attribute.nodeValue;
-			if(typeof nodeValue != 'string') {
+			if(typeof nodeValue == 'object') {
 				// IE returns all attributes, like onmouseup, etc
+				// some attrs come back as object types, we
+				// could parse outerHTML on the element to get at the original
+				// form of those attributes, but save that for later.
 				continue;
 			}
+			
 			var node_info = this.extract_node_info(attribute, parent_namespace_map);
 			if((node_info.namespaceURI || '').toLowerCase() == 'http://www.w3.org/2000/xmlns/')
 				continue; // ignore xmlns declaration
