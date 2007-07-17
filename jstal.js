@@ -26,6 +26,8 @@ jsTalTemplate = function(args) {
 		};
 	
 	this.jstal_namespace = JAVASCRIPT_TAL_NAMESPACE;
+	this.JAVASCRIPT_TAL_NOTHING = JAVASCRIPT_TAL_NOTHING;
+	this.JAVASCRIPT_TAL_DEFAULT = JAVASCRIPT_TAL_DEFAULT;
 	this.reserved_variable_names = { // templates should not define these
 			'options':true,
 			'nothing':true,
