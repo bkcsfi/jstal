@@ -303,8 +303,8 @@ jsTalTemplate.prototype = {
 						return;
 					} else throw e;
 				}
-				if((attribute_value != JAVASCRIPT_TAL_NOTHING) && (attribute_value !== false)) {
-					if((attribute_value == JAVASCRIPT_TAL_DEFAULT) || (attribute_value == null)) {
+				if((attribute_value !== JAVASCRIPT_TAL_NOTHING) && (attribute_value !== false)) {
+					if((attribute_value === JAVASCRIPT_TAL_DEFAULT) || (attribute_value === null)) {
 						// default, is there one?
 						if(expression.default_value != undefined) {
 							attributes.push(expression.attribute_name + '="' + 
