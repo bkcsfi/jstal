@@ -872,7 +872,7 @@ jsTalTemplate.prototype = {
 		} else if(0 == expression_text.indexOf('path:')) {
 			// a string expression
 			expression_text = this.trim(expression_text.substr(5));
-			var expression = this.compile_string_expression(expression_text,error_hint);
+			var expression = this.compile_path_expression(expression_text,error_hint);
 			expression_type = 'path';
 		} else {
 			// default to path
@@ -1055,8 +1055,9 @@ jsTalTemplate.prototype = {
 		// TALES spec, path:a/b/c  | nothing
 		// maybe later, allowences for E4X or xpath
 		// note, we examine the next step only if the result of the path
-		// is 'undefined', 'null' is not undefined.
-		
+		// is 'undefined', 'null' is not undefined unless failnull: prefix
+		// is specified on an expression segment, like
+		// path:some/path/withoutnull|failnull:some/path/withnull|nothing
 		var terminals = expression_text.split('|');
 		var expressions = [];
 		var match = this.strip_space_re;
@@ -1072,6 +1073,12 @@ jsTalTemplate.prototype = {
 		for(var i=0, l=expressions.length; i < l; i++) {
 			// every expression starts with the default context
 			var expression = expressions[i];
+			var fail_on_null = false;
+			if(0 == expression.indexOf('failnull:')) {
+				// change behaviour so that a null value is considered 'undefined'
+				expression = this.trim(expression.substr(9));
+				fail_on_null = true;
+			}
 			if(expression == 'nothing') {
 				function_text.push('return JAVASCRIPT_TAL_NOTHING;');			
 			} else if(expression == 'default') {
@@ -1119,14 +1126,24 @@ jsTalTemplate.prototype = {
 					function_text.push('else if(context.globals.' + step + ' !== undefined) { var c = context.globals; }'); // establish current context
 					function_text.push('else break;');
 				}
+				if(fail_on_null)
+					function_text.push("if(c === null) break;");
+					
 				for(var is=start_index, ls=steps.length; is < ls; is++) {
 					var step = steps[is];
 					function_text.push('c=c.'+step+';');
 					if(is+1 == ls) {
 						// on the last step, optimize the test
-						function_text.push("if(c !== undefined) return c;");
-					} else
-						function_text.push("if(c === undefined) break;");
+						if(fail_on_null)
+							function_text.push("if(c !== undefined && c !== null) return c;");
+						else							
+							function_text.push("if(c !== undefined) return c;");
+					} else {
+						if(fail_on_null)
+							function_text.push("if(c === undefined || c === null) break;");
+						else
+							function_text.push("if(c === undefined) break;");
+					}
 				}
 				function_text.push('} while(false);');
 			}
