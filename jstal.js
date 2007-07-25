@@ -185,7 +185,7 @@ jsTalTemplate.prototype = {
 						repeat_source = repeat_source(context);
 						
 					if(repeat_source === JAVASCRIPT_TAL_DEFAULT)
-						throw new Error("repeat source has cannot be 'default'");
+						throw new Error("repeat source cannot be 'default'");
 					else if(repeat_source === null)
 						throw new Error("repeat source has cannot be null");
 					else if(repeat_source === JAVASCRIPT_TAL_NOTHING)
