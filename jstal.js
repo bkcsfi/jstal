@@ -457,7 +457,7 @@ jsTalTemplate.prototype = {
 	
 	"escape_content" : function(str) {
 		// replace & with &amp; < with &lt; and > with &gt;
-		return  String(str).replace('&', '&amp;').replace('<', '&lt;').replace('>','&gt;');
+		return  String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g,'&gt;');
 	},
 	
 	"compile": function() {
@@ -785,7 +785,7 @@ jsTalTemplate.prototype = {
 		s = s.replace(double_colon, temp_marker);
 		var expressions = s.split(';');
 		for(var i=0, l=expressions.length; i < l; i++) {
-			var expression = expressions[i].replace(temp_marker, ';')
+			var expression = expressions[i].split(temp_marker).join(';');
 			expressions[i] = this.trim(expression);
 		}
 		return expressions;
@@ -908,10 +908,10 @@ jsTalTemplate.prototype = {
 			
 		// if there isn't a $ in the string, there's no string interp
 		var temp_marker = String.fromCharCode(1);
-		var s = expression_text.replace('$$', temp_marker);	// later we'll switch these to single $
+		var s = expression_text.replace(/\$\$/g, temp_marker);	// later we'll switch these to single $
 		if(-1 == s.indexOf('$')) {
 			// still no expressions in there
-			var expression_text = s.replace(temp_marker, '$');
+			var expression_text = s.split(temp_marker).join('$');
 			if(expression_type == 'string') {
 				return function(context) {
 					return expression_text;
@@ -974,7 +974,7 @@ jsTalTemplate.prototype = {
 				}
 				continue;
 			}			
-			parts.push(this_section.replace(temp_marker, '$'));
+			parts.push(this_section.split(temp_marker).join('$'));
 		}	// end while
 
 		if(expression_type == 'string') {		
