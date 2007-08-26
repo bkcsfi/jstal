@@ -784,11 +784,14 @@ jsTalTemplate.prototype = {
 		var temp_marker = String.fromCharCode(1);
 		s = s.replace(double_colon, temp_marker);
 		var expressions = s.split(';');
+		var non_null_expressions = [];
 		for(var i=0, l=expressions.length; i < l; i++) {
 			var expression = expressions[i].split(temp_marker).join(';');
-			expressions[i] = this.trim(expression);
+			var e = this.trim(expression);
+			if(e != '')
+				non_null_expressions.push(e);
 		}
-		return expressions;
+		return non_null_expressions;
 	},
 	
 	"extract_node_info" : function(node, parent_namespace_map) {
