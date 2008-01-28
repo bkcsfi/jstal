@@ -178,13 +178,15 @@ jsTalTemplate.prototype = {
 				var repeat_var = tal_repeat.repeat_var;
 				var locals = context.locals;
 				var repeat = context.repeat;
-
+				var source_is_e4x = false;
 				try {
 					var repeat_source = tal_repeat.expression(context);
 					if(typeof repeat_source == 'function')
 						repeat_source = repeat_source(context);
-						
-					if(repeat_source === JAVASCRIPT_TAL_DEFAULT)
+					if(typeof repeat_source == 'xml') {
+						// E4X xml source
+						source_is_e4x = true;
+					} else if(repeat_source === JAVASCRIPT_TAL_DEFAULT)
 						throw new Error("repeat source cannot be 'default'");
 					else if(repeat_source === null)
 						throw new Error("repeat source has cannot be null");
@@ -209,8 +211,12 @@ jsTalTemplate.prototype = {
 				}
 				
 				// what type of iterable is it?
-				if(repeat_source instanceof Array) {
-					for(var i=0, l=repeat_source.length; i < l; i++) {
+				if(source_is_e4x || repeat_source instanceof Array) {
+					if(source_is_e4x)
+						var limit = repeat_source.length();
+					else
+						var limit = repeat_source.length;
+					for(var i=0; i < limit; i++) {
 						locals[repeat_var] = repeat_source[i];
 						repeat[repeat_var] = {
 							'index':i,
