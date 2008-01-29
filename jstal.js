@@ -469,6 +469,7 @@ jsTalTemplate.prototype = {
 	"compile": function() {
 		// compile the source dom object
 		var traceback = [];
+		this.namespaceURI = this.template_element.namespaceURI;		
 		this.compiled_template = this.compile_element(this.template_element, 
 									{},  // parent_namespace_map
 									null,	// on_error_info
@@ -492,18 +493,27 @@ jsTalTemplate.prototype = {
 		// repeat and defines
 		
 		var e = {};	// use a plain dict to store element information
+		var static_attributes = [];
+		var declared_namespaces = [];
+		e.parent_namespace_map = parent_namespace_map;
 		e.clone_context = false;	// true if we have to copy context when expanding template
 		var node_info = this.extract_node_info(element, parent_namespace_map);
 		e.node_info = node_info;
 		e.traceback = traceback;	// remember traceback stack
 		
+		if(node_info.namespaceURI && !node_info.prefix && (parent_namespace_map[node_info.namespaceURI] === undefined)) {
+		 	// root of the template, declare the default namespace
+			static_attributes.push('xmlns="'+node_info.namespaceURI+'"');
+			parent_namespace_map[node_info.namespaceURI] = '';
+		}
 		if(node_info.namespaceURI && 
 			parent_namespace_map[node_info.namespaceURI] === undefined &&
 			node_info.prefix) {
-			e.declare_namespaces = [[node_info.namespaceURI, node_info.prefix]];
+			declared_namespaces.push([node_info.namespaceURI, node_info.prefix]);
 			
 			// remember we're going to declare it
 			parent_namespace_map[node_info.namespaceURI] = node_info.prefix;
+			static_attributes.push('xmlns:'+node_info.prefix+'="'+node_info.namespaceURI+'"');
 		}
 
 		var element_attributes = {};	// element attributes to be generated
@@ -523,9 +533,9 @@ jsTalTemplate.prototype = {
 			}
 			
 			var node_info = this.extract_node_info(attribute, parent_namespace_map);
-			if((node_info.namespaceURI || '').toLowerCase() == 'http://www.w3.org/2000/xmlns/')
-				continue; // ignore xmlns declaration
-				
+			if((node_info.namespaceURI || '').toLowerCase() == 'http://www.w3.org/2000/xmlns/') {
+				continue; // skip xmlns declaration
+			}
 			node_info.nodeValue = nodeValue;
 
 			if(node_info.namespaceURI != this.jstal_namespace) {
@@ -536,10 +546,11 @@ jsTalTemplate.prototype = {
 				if(node_info.namespaceURI && 
 					parent_namespace_map[node_info.namespaceURI] === undefined &&
 					node_info.prefix) {
-					e.declare_namespaces = [[node_info.namespaceURI, node_info.prefix]];
+					declared_namespaces.push([node_info.namespaceURI, node_info.prefix]);
 					
 					// remember we're going to declare it
 					parent_namespace_map[node_info.namespaceURI] = node_info.prefix;
+					static_attributes.push('xmlns:'+node_info.prefix+'="'+node_info.namespaceURI+'"');				
 				}
 				
 				element_attributes[node_info.tagname] = node_info;
@@ -561,12 +572,12 @@ jsTalTemplate.prototype = {
 												element_attributes);
 		
 		// generate fully static attributes
-		var static_attributes = [];
 		for(var tagname in element_attributes) {
 			var attribute_node_info = element_attributes[tagname];
 			static_attributes.push(attribute_node_info.tagname + 
 										'="'+attribute_node_info.nodeValue + '"');
 		}
+		
 		if(static_attributes.length) 
 			e.static_attributes = ' ' + static_attributes.join(' ');
 		else
@@ -587,13 +598,13 @@ jsTalTemplate.prototype = {
 		e.condition = tal_statements['condition'] ? tal_statements['condition'].expression : false; // save a lookup later
 		e.omit_tag = tal_statements['omit-tag'] ? tal_statements['omit-tag'].expression : false;
 		
-		if(e.omit_tag !== null) {
-			if(e.declare_namespaces) {
+		if(e.omit_tag !== null && e.omit_tag !== false) {
+			if(declared_namespaces.length) {
 				// this tag might get left out, so
 				// tell children we're not going to declare
 				// any namespaces
-				for(var i=0, l=e.declare_namespaces.length; i < l; i++) {
-					var namespace = e.declare_namespaces[i];
+				for(var i=0, l=declared_namespaces.length; i < l; i++) {
+					var namespace = declared_namespaces[i];
 					delete parent_namespace_map[namespace[0]];
 				}
 			}
