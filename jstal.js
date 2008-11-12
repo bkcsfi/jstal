@@ -224,8 +224,8 @@ jsTalTemplate.prototype = {
 							'even':Boolean(!(i & 1)),
 							'odd':Boolean((i & 1)),
 							'start':Boolean((i == 0)),
-							'end':Boolean((i+1 == l)),
-							'length':l
+							'end':Boolean((i+1 == limit)),
+							'length':limit
 						};
 						
 						this.html_expand_template(template, context, result_html, true);
