@@ -1065,7 +1065,7 @@ jsTalTemplate.prototype = {
 		try {
 			return new Function('context', expression_text);		
 		} catch(e) {
-			throw new Error("Got exception: "+e.message + ' while compiling:\n'+expression_text+ '\nerror_hint:'+error_hint);
+			throw new Error("Got exceptionX: "+e.message + ' while compiling:\n'+expression_text+ '\nerror_hint:'+error_hint);
 		}
 	},
 	
@@ -1172,7 +1172,8 @@ jsTalTemplate.prototype = {
 			error_hint = expression;
 		// IE does not like embedded \r\n in Function source, so 
 		// replace with escaped newline
-		function_text.push('throw new Error("expression evaluation failed: ' + String(error_hint).replace(/\r\n/g,"\\n") + '");');
+		// also IE10 doesn't like single newlines either
+		function_text.push('throw new Error("expression evaluation failedX: ' + String(error_hint).replace(/\r\n/g,"\\n").replace(/\n/g, "\\n") + '");');
 		function_text = function_text.join("\n");
 
 		return this.compile_javascript_expression(function_text, error_hint);
